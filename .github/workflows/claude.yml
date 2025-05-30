@@ -1,0 +1,29 @@
+name: Claude AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Claude AI Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional: customize Claude's behavior
+          # model: claude-3-opus-20240229
+          # max-tokens: 4096
