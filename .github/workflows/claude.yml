@@ -1,15 +1,19 @@
-name: Claude AI Code Review
+name: Claude Assistant
 
 on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
   pull_request:
     types: [opened, synchronize]
-  issues:
-    types: [opened, edited]
-  issue_comment:
-    types: [created, edited]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
-  claude-review:
+  claude-response:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,13 +21,12 @@ jobs:
       issues: write
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Claude AI Review
-        uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@beta
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Optional: customize Claude's behavior
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: customize the trigger phrase (default is @claude)
+          # trigger_phrase: "@ai"
+          # Optional: customize model
           # model: claude-3-opus-20240229
-          # max-tokens: 4096
+          # max_tokens: 4096
