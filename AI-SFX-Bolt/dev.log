@@ -1,0 +1,41 @@
+
+> bolt-cep@2.0.0 dev
+> vite
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+dist/cep/jsx/index.js
+[1;32mCEP Panels Served at:
+
+[0m   > main: [1;36mhttp://localhost:3030/main/
+
+  VITE v5.4.19  ready in 593 ms
+
+  ➜  Local:   http://localhost:3030/
+  ➜  Network: use --host to expose
+ExtendScript Change
+2:13:11 PM [vite] page reload main/index.html
+The request url "/Users/richardtran/Documents/Code/Personal Projects/Premiere Ai Text Editor/Test-cwyyx8-BOLT/node_modules/.vite/deps/react.js.map" is outside of Vite serving allow list.
+
+- /Users/richardtran/Documents/Code/Personal Projects/Premiere Plugins/Ai SFX/AI-SFX-Bolt
+
+Refer to docs https://vite.dev/config/server-options.html#server-fs-allow for configurations and more details.
+
+The request url "/Users/richardtran/Documents/Code/Personal Projects/Premiere Ai Text Editor/Test-cwyyx8-BOLT/node_modules/.vite/deps/chunk-JVWSFFO4.js.map" is outside of Vite serving allow list.
+The request url "/Users/richardtran/Documents/Code/Personal Projects/Premiere Ai Text Editor/Test-cwyyx8-BOLT/node_modules/.vite/deps/react-dom_client.js.map" is outside of Vite serving allow list.
+The request url "/Users/richardtran/Documents/Code/Personal Projects/Premiere Ai Text Editor/Test-cwyyx8-BOLT/node_modules/.vite/deps/chunk-NENL2VAL.js.map" is outside of Vite serving allow list.
+The request url "/Users/richardtran/Documents/Code/Personal Projects/Premiere Ai Text Editor/Test-cwyyx8-BOLT/node_modules/.vite/deps/react_jsx-dev-runtime.js.map" is outside of Vite serving allow list.
+ExtendScript Change
+2:22:39 PM [vite] page reload main/index.html
+2:23:17 PM [vite] hmr update /main/main.tsx
+2:28:02 PM [vite] hmr update /main/main.tsx
+2:29:02 PM [vite] hmr update /main/main.tsx
+2:29:12 PM [vite] hmr update /main/main.tsx
+ExtendScript Change
+2:31:38 PM [vite] page reload main/index.html
+ExtendScript Change
+2:34:27 PM [vite] page reload main/index.html
+ExtendScript Change
+2:34:51 PM [vite] page reload main/index.html
+ExtendScript Change
+2:36:39 PM [vite] page reload main/index.html
+2:38:04 PM [vite] hmr update /main/main.tsx
