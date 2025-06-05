@@ -1519,24 +1519,27 @@ export const placeExistingProjectItem = (binPath: string, timeSeconds?: number, 
             const track = sequence.audioTracks[i];
             let hasConflict = false;
             
-            // Check for conflicts with existing clips
-            for (let j = 0; j < track.clips.numTracks; j++) {
-                const clip = track.clips[j];
-                const clipStart = clip.start.seconds;
-                const clipEnd = clip.end.seconds;
-                
-                if (placementTime >= clipStart && placementTime < clipEnd) {
-                    hasConflict = true;
-                    placementAttempts.push({
-                        trackIndex: i,
-                        conflict: true,
-                        conflictingClip: {
-                            name: clip.name,
-                            start: clipStart,
-                            end: clipEnd
-                        }
-                    });
-                    break;
+            // Check for conflicts with existing clips (using same collision detection as importAndPlaceAudioAtTime)
+            if (track.clips && track.clips.numItems > 0) {
+                for (let j = 0; j < track.clips.numItems; j++) {
+                    const clip = track.clips[j];
+                    const clipStart = clip.start.seconds;
+                    const clipEnd = clip.end.seconds;
+                    
+                    // Check if placement time overlaps with existing clip (with small buffer)
+                    if (placementTime >= (clipStart - 0.1) && placementTime <= (clipEnd + 0.1)) {
+                        hasConflict = true;
+                        placementAttempts.push({
+                            trackIndex: i,
+                            conflict: true,
+                            conflictingClip: {
+                                name: clip.name,
+                                start: clipStart,
+                                end: clipEnd
+                            }
+                        });
+                        break;
+                    }
                 }
             }
             
@@ -1552,12 +1555,115 @@ export const placeExistingProjectItem = (binPath: string, timeSeconds?: number, 
             }
         }
         
-        // If no available track found, use the same track creation logic
+        // If no available track found, create new track using QE API
         if (!foundAvailableTrack) {
-            result.debug.creatingNewTrack = true;
-            // ... (same track creation logic as importAndPlaceAudioAtTime)
-            // For brevity, we'll just use the last track for now
-            finalTrackIndex = sequence.audioTracks.numTracks - 1;
+            result.debug.beforeTrackCreation = sequence.audioTracks.numTracks;
+            result.debug.attemptingNewTrack = true;
+            
+            let newTrack = null;
+            const trackCreationAttempts = [];
+            
+            // First, enable QE API access
+            try {
+                app.enableQE();
+                trackCreationAttempts.push("app.enableQE() - SUCCESS");
+                result.debug.qeEnabled = true;
+            } catch (qeError) {
+                trackCreationAttempts.push("app.enableQE() - ERROR: " + qeError.toString());
+                result.debug.qeEnabled = false;
+            }
+            
+            // Attempt 1: Use QE API to add tracks (proven working method)
+            if (result.debug.qeEnabled) {
+                try {
+                    const qeSequence = qe.project.getActiveSequence();
+                    if (qeSequence) {
+                        // Use CORRECT QE API syntax with all 7 parameters
+                        if (typeof qeSequence.addTracks === 'function') {
+                            const currentAudioTracks = sequence.audioTracks.numTracks;
+                            
+                            // Add 1 stereo audio track at the END
+                            qeSequence.addTracks(0, 0, 1, 1, currentAudioTracks, 0, 0);
+                            newTrack = true;
+                            trackCreationAttempts.push("qe.addTracks(0,0,1,1," + currentAudioTracks + ",0,0) STEREO AT END - SUCCESS");
+                        } else {
+                            trackCreationAttempts.push("qe.addTracks() - NOT AVAILABLE");
+                        }
+                    } else {
+                        trackCreationAttempts.push("qe.project.getActiveSequence() - FAILED");
+                    }
+                } catch (qeAddError) {
+                    trackCreationAttempts.push("qe.addTracks() - ERROR: " + qeAddError.toString());
+                }
+            }
+            
+            // Attempt 2: Try alternative QE methods
+            if (!newTrack && result.debug.qeEnabled) {
+                try {
+                    const qeSequence = qe.project.getActiveSequence();
+                    if (qeSequence && typeof qeSequence.insertTracks === 'function') {
+                        qeSequence.insertTracks(0, 1); // Insert 1 audio track
+                        newTrack = true;
+                        trackCreationAttempts.push("qe.insertTracks(0, 1) - SUCCESS");
+                    } else {
+                        trackCreationAttempts.push("qe.insertTracks() - NOT AVAILABLE");
+                    }
+                } catch (qeInsertError) {
+                    trackCreationAttempts.push("qe.insertTracks() - ERROR: " + qeInsertError.toString());
+                }
+            }
+            
+            // Attempt 3: Try direct sequence manipulation
+            if (!newTrack) {
+                try {
+                    if (typeof sequence.insertAudioTrack === 'function') {
+                        newTrack = sequence.insertAudioTrack();
+                        trackCreationAttempts.push("sequence.insertAudioTrack() - SUCCESS");
+                    } else {
+                        trackCreationAttempts.push("sequence.insertAudioTrack() - NOT AVAILABLE");
+                    }
+                } catch (e3) {
+                    trackCreationAttempts.push("sequence.insertAudioTrack() - ERROR: " + e3.toString());
+                }
+            }
+            
+            result.debug.trackCreationAttempts = trackCreationAttempts;
+            result.debug.afterTrackCreation = sequence.audioTracks.numTracks;
+            
+            if (!newTrack) {
+                // If we can't create tracks, fall back to using existing tracks
+                result.debug.trackCreationFailed = true;
+                result.debug.apiLimitation = "Premiere Pro ExtendScript may not support dynamic track creation";
+                result.debug.fallbackStrategy = "Will place on existing tracks, even if there are conflicts";
+                
+                // Use the last available track instead of creating a new one
+                finalTrackIndex = sequence.audioTracks.numTracks - 1;
+                foundAvailableTrack = true;
+                result.debug.usingFallbackTrack = finalTrackIndex;
+                result.debug.createdNewTrack = false;
+            } else {
+                // Successfully created a new track
+                if (sequence.audioTracks.numTracks > result.debug.beforeTrackCreation) {
+                    // Success! Track was actually created - use the NEW track at the end
+                    finalTrackIndex = sequence.audioTracks.numTracks - 1;
+                    result.debug.createdNewTrack = true;
+                    result.debug.newTrackIndex = finalTrackIndex;
+                    result.debug.trackCreationSuccess = true;
+                    result.debug.trackCreationConfirmed = "YES - from " + result.debug.beforeTrackCreation + " to " + result.debug.afterTrackCreation;
+                    result.debug.usingNewlyCreatedTrack = "Track " + (finalTrackIndex + 1) + " (should be empty)";
+                    foundAvailableTrack = true;
+                } else {
+                    // Track creation call succeeded but no new track appeared
+                    result.debug.trackCreationConfirmed = "NO - track count stayed " + sequence.audioTracks.numTracks;
+                    result.debug.trackCreationFailed = true;
+                    
+                    // Fall back to using existing tracks
+                    finalTrackIndex = sequence.audioTracks.numTracks - 1;
+                    foundAvailableTrack = true;
+                    result.debug.usingFallbackTrack = finalTrackIndex;
+                    result.debug.createdNewTrack = false;
+                }
+            }
         }
         
         result.debug.placementAttempts = placementAttempts;
@@ -1578,10 +1684,20 @@ export const placeExistingProjectItem = (binPath: string, timeSeconds?: number, 
         
         // Success!
         result.success = true;
+        result.step = "completed";
+        
+        let message = "Audio placed at " + formatTime(placementTime) + " on track " + (finalTrackIndex + 1);
+        if (result.debug.createdNewTrack) {
+            message += " (new track created)";
+        } else if (finalTrackIndex !== startingTrackIndex) {
+            message += " (avoided conflicts)";
+        }
+        
+        result.message = message;
+        result.fileName = projectItem.name;
         result.trackIndex = finalTrackIndex;
-        result.message = foundAvailableTrack 
-            ? "Placed existing item on track " + (finalTrackIndex + 1)
-            : "Placed existing item on new track";
+        result.position = placementTime;
+        result.positionFormatted = formatTime(placementTime);
         
         return result;
         
