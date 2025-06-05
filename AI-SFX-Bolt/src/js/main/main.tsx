@@ -42,9 +42,10 @@ export const App = () => {
     const extensionId = csi.getExtensionID();
     const expectedId = "com.ai.sfx.generator";
     
-    if (extensionId !== expectedId) {
+    // Allow both main extension ID and panel-specific ID
+    if (extensionId !== expectedId && !extensionId.startsWith(expectedId)) {
       console.error(`🚨 CRITICAL ERROR: Wrong plugin loaded!`);
-      console.error(`Expected: ${expectedId}`);
+      console.error(`Expected: ${expectedId} (or variant)`);
       console.error(`Got: ${extensionId}`);
       
       // Force correct identity
@@ -57,7 +58,7 @@ export const App = () => {
         return;
       }
     } else {
-      console.log("✅ AI SFX Generator loaded correctly");
+      console.log(`✅ AI SFX Generator loaded correctly (ID: ${extensionId})`);
     }
   }, []);
 
@@ -126,7 +127,14 @@ export const App = () => {
     // Remove audio file extension if present
     let name = filename.replace(/\.(mp3|wav|aac|m4a|flac|ogg|aiff|aif)$/i, '');
     
-    // Check for NEW number prefix format: "001 cat walking"
+    // Check for NEW number suffix format: "cat walking 1" or "explosion sound 12"
+    const numberSuffixMatch = name.match(/^(.+?)\s+(\d+)$/);
+    if (numberSuffixMatch) {
+      const [, prompt, number] = numberSuffixMatch;
+      return `${prompt} (${number})`;
+    }
+    
+    // Check for OLD number prefix format: "001 cat walking"
     const numberPrefixMatch = name.match(/^(\d{3})\s+(.+)$/);
     if (numberPrefixMatch) {
       const [, number, prompt] = numberPrefixMatch;
@@ -308,8 +316,11 @@ export const App = () => {
     showStatus('Detecting timeline...');
 
     try {
-      // Get current timeline info
+      // Get current timeline info and capture playhead position immediately
       const timelineInfo = await evalTS("getSequenceInfo");
+      const currentPlayheadPosition = timelineInfo?.playheadPosition || timelineInfo?.playhead?.seconds || 0;
+      
+      console.log(`🎯 Captured playhead position at generation start: ${currentPlayheadPosition}s`);
       
       let duration = state.currentDuration;
       let placementPosition: number | null = null;
@@ -394,8 +405,8 @@ export const App = () => {
           console.log('📍 Using In-N-Out placement at:', placementPosition, 'seconds');
           result = await evalTS("importAndPlaceAudioAtTime", filePath, placementPosition, 0);
         } else {
-          console.log('📍 Using playhead placement');
-          result = await evalTS("importAndPlaceAudio", filePath, 0);
+          console.log('📍 Using captured playhead position at:', currentPlayheadPosition, 'seconds');
+          result = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, 0);
         }
         
         console.log('✅ Timeline placement result:', result);
@@ -439,8 +450,8 @@ export const App = () => {
           console.log('🔄 Trying fallback placement method...');
           showStatus('Trying alternative placement...');
           
-          // Fallback: Try basic import without placement
-          const fallbackResult = await evalTS("importAndPlaceAudio", filePath, 0);
+          // Fallback: Try with captured playhead position
+          const fallbackResult = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, 0);
           console.log('🔄 Fallback result:', fallbackResult);
           
           if (fallbackResult && fallbackResult.success) {
@@ -487,28 +498,67 @@ export const App = () => {
     }
   }, [state, showStatus]);
 
-  // Generate SFX using Eleven Labs API
+  // Generate SFX using Eleven Labs API with retry logic
   const generateSFX = async (prompt: string, duration: number, apiKey: string, promptInfluence: number): Promise<ArrayBuffer> => {
-    const response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-        'Accept': 'audio/mpeg'
-      },
-      body: JSON.stringify({
-        text: prompt,
-        duration_seconds: Math.max(1, Math.min(22, duration)),
-        prompt_influence: promptInfluence
-      })
-    });
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        attempt++;
+        console.log(`🎵 API attempt ${attempt}/${maxRetries} for: "${prompt}"`);
+        
+        const response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': apiKey,
+            'Accept': 'audio/mpeg'
+          },
+          body: JSON.stringify({
+            text: prompt,
+            duration_seconds: Math.max(1, Math.min(22, duration)),
+            prompt_influence: promptInfluence
+          })
+        });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API request failed: ${response.status} - ${error}`);
+        if (response.ok) {
+          console.log(`✅ API success on attempt ${attempt}`);
+          return response.arrayBuffer();
+        }
+        
+        // Handle rate limiting (429) and server errors (5xx)
+        if (response.status === 429 || response.status >= 500) {
+          const errorText = await response.text();
+          const waitTime = Math.min(2000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+          
+          console.log(`⏳ Rate limited (${response.status}). Waiting ${waitTime}ms before retry...`);
+          
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          } else {
+            throw new Error(`API request failed after ${maxRetries} attempts: ${response.status} - ${errorText}`);
+          }
+        } else {
+          // Non-retryable error (4xx except 429)
+          const error = await response.text();
+          throw new Error(`API request failed: ${response.status} - ${error}`);
+        }
+        
+      } catch (fetchError) {
+        if (attempt === maxRetries) {
+          throw fetchError;
+        }
+        
+        // Network error - retry with backoff
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`🌐 Network error on attempt ${attempt}. Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
     }
-
-    return response.arrayBuffer();
+    
+    throw new Error(`Failed to generate SFX after ${maxRetries} attempts`);
   };
 
   // Get SFX folder path
@@ -829,27 +879,35 @@ export const App = () => {
                     let number = 0;
                     let prompt = basename;
                     
-                    // Pattern 1: NEW FORMAT - "001 explosion sound" (number prefix with spaces)
-                    const newFormatMatch = basename.match(/^(\d+)\s+(.+)$/);
-                    if (newFormatMatch) {
-                      number = parseInt(newFormatMatch[1]);
-                      prompt = newFormatMatch[2];
-                      console.log(`📝 Parsed new format: "${basename}" → number: ${number}, prompt: "${prompt}"`);
+                    // Pattern 1: NEW SUFFIX FORMAT - "explosion sound 1" or "cat walking 12"
+                    const newSuffixMatch = basename.match(/^(.+?)\s+(\d+)$/);
+                    if (newSuffixMatch) {
+                      prompt = newSuffixMatch[1];
+                      number = parseInt(newSuffixMatch[2]);
+                      console.log(`📝 Parsed new suffix format: "${basename}" → prompt: "${prompt}", number: ${number}`);
                     } else {
-                      // Pattern 2: OLD FORMAT - "prompt_001_timestamp" or "prompt_1_timestamp" 
-                      const oldNumberMatch = basename.match(/(.+?)_(\d+)_(.+)$/);
-                      if (oldNumberMatch) {
-                        prompt = oldNumberMatch[1].replace(/_/g, ' ');
-                        number = parseInt(oldNumberMatch[2]);
+                      // Pattern 2: OLD PREFIX FORMAT - "001 explosion sound" (number prefix with spaces)
+                      const oldPrefixMatch = basename.match(/^(\d+)\s+(.+)$/);
+                      if (oldPrefixMatch) {
+                        number = parseInt(oldPrefixMatch[1]);
+                        prompt = oldPrefixMatch[2];
+                        console.log(`📝 Parsed old prefix format: "${basename}" → number: ${number}, prompt: "${prompt}"`);
                       } else {
-                        // Pattern 3: LEGACY FORMAT - "prompt_timestamp" (no number)
-                        // Look for timestamp pattern at the end: YYYY-MM-DDTHH-MM-SS
-                        const legacyMatch = basename.match(/(.+?)_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})$/);
-                        if (legacyMatch) {
-                          prompt = legacyMatch[1].replace(/_/g, ' ');
+                        // Pattern 3: OLD UNDERSCORE FORMAT - "prompt_001_timestamp" or "prompt_1_timestamp" 
+                        const oldNumberMatch = basename.match(/(.+?)_(\d+)_(.+)$/);
+                        if (oldNumberMatch) {
+                          prompt = oldNumberMatch[1].replace(/_/g, ' ');
+                          number = parseInt(oldNumberMatch[2]);
                         } else {
-                          // Fallback: if no timestamp pattern, use the whole basename as prompt
-                          prompt = basename.replace(/_/g, ' ');
+                          // Pattern 4: LEGACY FORMAT - "prompt_timestamp" (no number)
+                          // Look for timestamp pattern at the end: YYYY-MM-DDTHH-MM-SS
+                          const legacyMatch = basename.match(/(.+?)_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})$/);
+                          if (legacyMatch) {
+                            prompt = legacyMatch[1].replace(/_/g, ' ');
+                          } else {
+                            // Fallback: if no timestamp pattern, use the whole basename as prompt
+                            prompt = basename.replace(/_/g, ' ');
+                          }
                         }
                       }
                     }
@@ -1028,13 +1086,12 @@ export const App = () => {
     const existingFiles = await scanExistingSFXFiles();
     const nextNumber = getNextNumberForPrompt(prompt, existingFiles);
     
-    // Use WORKING v1.3 naming convention for compatibility
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const cleanPrompt = prompt.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/ /g, '_');
-    const fileName = `${cleanPrompt}_${timestamp}.mp3`;
+    // NEW: Use numbered suffix naming convention: "explosion sound 1.mp3" (single digit unless multi-digit)
+    const cleanPrompt = prompt.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    const fileName = `${cleanPrompt} ${nextNumber}.mp3`;
     const filePath = `${sfxPath}/${fileName}`;
     
-    console.log(`💾 Saving new SFX with modern naming: "${fileName}"`);
+    console.log(`💾 Saving new SFX with numbered suffix: "${fileName}" (number: ${nextNumber})`);
     
     const buffer = Buffer.from(audioData);
     fs.writeFileSync(filePath, buffer);
@@ -1066,23 +1123,49 @@ export const App = () => {
         
         // Filter existing files using the full file info
         const filteredFileInfo = state.allSFXFileInfo.filter(file => {
-          // Search in both the prompt and filename, handling underscores as spaces
-          const normalizedPrompt = file.prompt.replace(/_/g, ' ');
-          const normalizedBasename = file.basename.replace(/_/g, ' ');
-          const normalizedFilename = file.filename.replace(/_/g, ' ');
+          // Check if search term is a number (for numbered file retrieval)
+          const isNumberSearch = /^\d+$/.test(searchTerm);
           
-          // Also normalize search term to handle underscores
-          const normalizedSearchTerm = searchTerm.replace(/_/g, ' ');
-          
-          const searchableText = `${normalizedPrompt} ${normalizedBasename} ${normalizedFilename}`.toLowerCase();
-          const matches = searchableText.includes(normalizedSearchTerm) || 
-                         searchableText.includes(searchTerm); // Also try original search term
-          
-          if (matches) {
-            console.log(`✅ Match found: ${file.filename} (prompt: "${file.prompt}", basename: "${file.basename}", display: "${formatFileDisplayName(file.filename)}")`);
+          if (isNumberSearch) {
+            // Search by number suffix: if user types "1" or "12", match files ending with those numbers
+            const searchNumber = parseInt(searchTerm);
+            const fileNumber = file.number || 0;
+            
+            // Match if the file number equals the search number, or if filename ends with " number.extension"
+            const numberMatch = fileNumber === searchNumber || 
+                               file.filename.endsWith(' ' + searchTerm + '.mp3') ||
+                               file.filename.endsWith(' ' + searchTerm + '.wav') ||
+                               file.filename.endsWith(' ' + searchTerm + '.aac') ||
+                               file.filename.endsWith(' ' + searchTerm + '.m4a') ||
+                               file.filename.endsWith(' ' + searchTerm + '.flac') ||
+                               file.filename.endsWith(' ' + searchTerm + '.ogg') ||
+                               file.filename.endsWith(' ' + searchTerm + '.aiff') ||
+                               file.filename.endsWith(' ' + searchTerm + '.aif');
+            
+            if (numberMatch) {
+              console.log(`🔢 Number match found: ${file.filename} (file number: ${fileNumber}, search: ${searchTerm})`);
+            }
+            
+            return numberMatch;
+          } else {
+            // Text search in both the prompt and filename, handling underscores as spaces
+            const normalizedPrompt = file.prompt.replace(/_/g, ' ');
+            const normalizedBasename = file.basename.replace(/_/g, ' ');
+            const normalizedFilename = file.filename.replace(/_/g, ' ');
+            
+            // Also normalize search term to handle underscores
+            const normalizedSearchTerm = searchTerm.replace(/_/g, ' ');
+            
+            const searchableText = `${normalizedPrompt} ${normalizedBasename} ${normalizedFilename}`.toLowerCase();
+            const matches = searchableText.includes(normalizedSearchTerm) || 
+                           searchableText.includes(searchTerm); // Also try original search term
+            
+            if (matches) {
+              console.log(`✅ Text match found: ${file.filename} (prompt: "${file.prompt}", basename: "${file.basename}", display: "${formatFileDisplayName(file.filename)}")`);
+            }
+            
+            return matches;
           }
-          
-          return matches;
         });
         
         console.log(`📊 Found ${filteredFileInfo.length} matches for "${searchTerm}"`);
@@ -1150,31 +1233,15 @@ export const App = () => {
           throw new Error(result.error || 'Failed to place project item');
         }
       } else {
-        // Filesystem file - use the function that avoids duplicating in project bin
-        console.log(`📁 Placing filesystem file without duplicating: ${selectedFile.path}`);
-        const result = await evalTS("placeAudioWithoutDuplicating", selectedFile.path, 0);
+        // Filesystem file - use standard import function
+        console.log(`📁 Placing filesystem file: ${selectedFile.path}`);
+        const result = await evalTS("importAndPlaceAudio", selectedFile.path, 0) as PlacementResult;
         
-        if (result.success) {
-          // Log debug information for track creation
-          if (result.debug && result.debug.needsNewTrack) {
-            console.log(`🎵 Track creation debug for ${filename}:`);
-            console.log(`   📊 Before: ${result.debug.beforeTrackCreation} tracks`);
-            console.log(`   📊 After: ${result.debug.afterTrackCreation} tracks`);
-            console.log(`   ✅ Created new track: ${result.debug.createdNewTrack}`);
-            if (result.debug.trackCreationAttempts) {
-              console.log(`   🔧 Attempts:`, result.debug.trackCreationAttempts);
-            }
-            if (result.debug.trackCreationFailed) {
-              console.log(`   ⚠️ Track creation failed, using fallback`);
-            }
-          }
-          
-          const message = result.alreadyInProject 
-            ? `SFX "${filename}" (already in project) placed on timeline!`
-            : `SFX "${filename}" (from SFX folder) added to timeline!`;
+        if (result && result.success) {
+          const message = `SFX "${filename}" (from SFX folder) added to timeline!`;
           showStatus(message, 3000);
         } else {
-          throw new Error(result.error || 'Failed to place audio');
+          throw new Error(result?.error || 'Failed to place audio');
         }
       }
     } catch (error) {

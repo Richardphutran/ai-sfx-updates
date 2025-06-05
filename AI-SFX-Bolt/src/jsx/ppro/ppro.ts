@@ -368,26 +368,33 @@ export const scanProjectBinsForSFX = () => {
                             // Remove file extension (supports multiple formats)
                             const baseName = fileName.replace(/\.(mp3|wav|aac|m4a|flac|ogg|aiff|aif)$/i, '');
                             
-                            // Parse filename for prompt and number (supports old and new formats)
+                            // Parse filename for prompt and number (supports all formats)
                             let number = 0;
                             let prompt = baseName;
                             
-                            // Pattern 1: NEW FORMAT - "001 explosion sound" (number prefix with spaces)
-                            const newFormatMatch = baseName.match(/^(\d+)\s+(.+)$/);
-                            if (newFormatMatch) {
-                                number = parseInt(newFormatMatch[1]);
-                                prompt = newFormatMatch[2];
+                            // Pattern 1: NEW SUFFIX FORMAT - "explosion sound 1" or "cat walking 12"
+                            const newSuffixMatch = baseName.match(/^(.+?)\s+(\d+)$/);
+                            if (newSuffixMatch) {
+                                prompt = newSuffixMatch[1];
+                                number = parseInt(newSuffixMatch[2]);
                             } else {
-                                // Pattern 2: OLD FORMAT - "prompt_001_timestamp" or "prompt_1_timestamp" 
-                                const oldNumberMatch = baseName.match(/(.+?)_(\d+)_(.+)$/);
-                                if (oldNumberMatch) {
-                                    prompt = oldNumberMatch[1].replace(/_/g, ' ');
-                                    number = parseInt(oldNumberMatch[2]);
+                                // Pattern 2: OLD PREFIX FORMAT - "001 explosion sound" (number prefix with spaces)
+                                const oldPrefixMatch = baseName.match(/^(\d+)\s+(.+)$/);
+                                if (oldPrefixMatch) {
+                                    number = parseInt(oldPrefixMatch[1]);
+                                    prompt = oldPrefixMatch[2];
                                 } else {
-                                    // Pattern 3: LEGACY FORMAT - "prompt_timestamp" (no number)
-                                    const legacyMatch = baseName.match(/(.+?)_(.+)$/);
-                                    if (legacyMatch) {
-                                        prompt = legacyMatch[1].replace(/_/g, ' ');
+                                    // Pattern 3: OLD UNDERSCORE FORMAT - "prompt_001_timestamp" or "prompt_1_timestamp" 
+                                    const oldNumberMatch = baseName.match(/(.+?)_(\d+)_(.+)$/);
+                                    if (oldNumberMatch) {
+                                        prompt = oldNumberMatch[1].replace(/_/g, ' ');
+                                        number = parseInt(oldNumberMatch[2]);
+                                    } else {
+                                        // Pattern 4: LEGACY FORMAT - "prompt_timestamp" (no number)
+                                        const legacyMatch = baseName.match(/(.+?)_(.+)$/);
+                                        if (legacyMatch) {
+                                            prompt = legacyMatch[1].replace(/_/g, ' ');
+                                        }
                                     }
                                 }
                             }

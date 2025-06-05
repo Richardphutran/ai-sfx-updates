@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Project Detection Test</title>
+    <script src="http://localhost:9230/assets/main-D8GlQBSe.js"></script>
+</head>
+<body>
+    <h1>Project Detection Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        // Wait for CEP to be available
+        setTimeout(() => {
+            const csi = new CSInterface();
+            const results = document.getElementById('results');
+            
+            async function testProjectDetection() {
+                results.innerHTML += '<h2>🔍 Testing Project Detection</h2>';
+                
+                // Test 1: Basic app info
+                results.innerHTML += '<h3>Test 1: Basic App Info</h3>';
+                const appInfo = await new Promise((resolve) => {
+                    csi.evalScript('getAppInfo()', (result) => {
+                        try { 
+                            resolve(JSON.parse(result)); 
+                        } catch (e) { 
+                            resolve({success: false, error: "Parse failed", raw: result}); 
+                        }
+                    });
+                });
+                results.innerHTML += '<pre>' + JSON.stringify(appInfo, null, 2) + '</pre>';
+                
+                // Test 2: Project path with enhanced debug
+                results.innerHTML += '<h3>Test 2: Project Path Debug</h3>';
+                const projectPath = await new Promise((resolve) => {
+                    csi.evalScript('getProjectPath()', (result) => {
+                        results.innerHTML += '<p><strong>Raw ExtendScript result:</strong> ' + result + '</p>';
+                        try { 
+                            resolve(JSON.parse(result)); 
+                        } catch (e) { 
+                            resolve({success: false, error: "Parse failed", raw: result}); 
+                        }
+                    });
+                });
+                results.innerHTML += '<pre>' + JSON.stringify(projectPath, null, 2) + '</pre>';
+                
+                // Test 3: Simple ExtendScript test
+                results.innerHTML += '<h3>Test 3: Simple ExtendScript Test</h3>';
+                const simpleTest = await new Promise((resolve) => {
+                    csi.evalScript('testBasicExtendScript()', (result) => {
+                        try { 
+                            resolve(JSON.parse(result)); 
+                        } catch (e) { 
+                            resolve({success: false, error: "Parse failed", raw: result}); 
+                        }
+                    });
+                });
+                results.innerHTML += '<pre>' + JSON.stringify(simpleTest, null, 2) + '</pre>';
+                
+                // Test 4: Check if we can access app object directly
+                results.innerHTML += '<h3>Test 4: Direct ExtendScript App Check</h3>';
+                const directAppCheck = await new Promise((resolve) => {
+                    csi.evalScript(`
+                        try {
+                            var result = {
+                                hasApp: typeof app !== 'undefined',
+                                appType: typeof app,
+                                hasProject: typeof app !== 'undefined' && typeof app.project !== 'undefined',
+                                projectType: typeof app !== 'undefined' ? typeof app.project : 'N/A'
+                            };
+                            if (typeof app !== 'undefined' && app.project) {
+                                result.projectName = app.project.name || 'Untitled';
+                                result.projectPath = app.project.path || 'No path';
+                            }
+                            JSON.stringify(result);
+                        } catch (e) {
+                            JSON.stringify({error: e.toString()});
+                        }
+                    `, (result) => {
+                        try { 
+                            resolve(JSON.parse(result)); 
+                        } catch (e) { 
+                            resolve({success: false, error: "Parse failed", raw: result}); 
+                        }
+                    });
+                });
+                results.innerHTML += '<pre>' + JSON.stringify(directAppCheck, null, 2) + '</pre>';
+                
+                results.innerHTML += '<h2>🎯 Diagnosis Complete</h2>';
+            }
+            
+            testProjectDetection();
+        }, 2000);
+    </script>
+</body>
+</html>

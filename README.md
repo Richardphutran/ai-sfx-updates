@@ -1,58 +1,64 @@
-# AI SFX - Adobe Premiere Pro Plugin
+# AI SFX Generator for Adobe Premiere Pro
 
-An AI-powered sound effects plugin for Adobe Premiere Pro that automatically generates and applies sound effects to your video projects.
+A UXP plugin that generates AI-powered sound effects using Eleven Labs and imports them directly into your Premiere Pro project.
 
 ## Features
 
-- AI-powered sound effect generation
-- Seamless integration with Adobe Premiere Pro
-- Real-time audio processing
-- Custom sound effect library
-- Automatic synchronization with video timeline
+- 🤖 **AI-Powered Sound Generation**: Describe any sound effect in natural language
+- 📁 **Automatic Import**: Generated sounds are imported directly to your project bin
+- 🗂️ **Organized File Management**: All sounds saved in project folder > "Sfx ai" subfolder
+- ⚡ **Fast Workflow**: Simple chat interface with keyboard shortcuts
+- 🎯 **Professional UI**: Clean interface inspired by professional plugins like Boombox
 
 ## Installation
 
-1. Download the latest release
-2. Copy the plugin files to your Adobe Premiere Pro plugins directory
-3. Restart Adobe Premiere Pro
-4. Access the plugin from the Effects panel
+1. Download the plugin files
+2. In Premiere Pro: Window > Extensions > UXP Developer Tool
+3. Click "Load" and select the plugin folder
+4. The plugin will appear in Window > Extensions > AI SFX Generator
+
+## Usage
+
+1. **First Time Setup**: Enter your Eleven Labs API key
+2. **Generate Sound**: Type a description (e.g., "dog barking", "thunder rumble")
+3. **Press Enter**: The sound will be generated and imported to your project
+4. **Manual Placement**: Drag the imported audio from the Project panel to your timeline
+
+## Keyboard Shortcuts
+
+- **Enter**: Generate sound effect (when input is focused)
+- **Ctrl/Cmd + D**: Debug mode (shows Premiere state)
+- **Esc**: Go back to main view
 
 ## Requirements
 
-- Adobe Premiere Pro CC 2019 or later
-- macOS 10.14+ or Windows 10+
-- 8GB RAM minimum (16GB recommended)
-- Internet connection for AI features
+- Adobe Premiere Pro 2024 or later
+- Eleven Labs API key with sound generation permissions
+- Active internet connection
 
-## Development
+## Known Limitations
 
-### Setup
+- **Manual Timeline Placement Required**: Due to Adobe UXP API limitations, the plugin cannot automatically place clips on the timeline. After import, you need to manually drag the audio file from the Project panel to your desired track and position.
+- **Bin Organization**: The plugin attempts to create an "SFX AI" bin but may not succeed in all cases due to API limitations.
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/ai-sfx.git
+## File Organization
 
-# Install dependencies
-npm install
-
-# Build the plugin
-npm run build
+Generated files are saved with descriptive names:
+```
+Project Folder/
+└── Sfx ai/
+    ├── dog_barking_2025-05-30T16-10-54.mp3
+    ├── thunder_rumble_2025-05-30T16-15-32.mp3
+    └── ...
 ```
 
-### Testing
+## Technical Details
 
-```bash
-npm test
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+Built with:
+- Adobe UXP (Unified Extensibility Platform)
+- Spectrum Web Components for UI
+- Eleven Labs API for sound generation
 
 ## Support
 
-For support, please open an issue on the GitHub repository or contact support@ai-sfx.com
+For issues or feature requests, please create an issue on GitHub.

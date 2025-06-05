@@ -1,0 +1,102 @@
+{
+  "ai-sfx-plugin": {
+    "contributions": [
+      {
+        "category": "api-integration",
+        "topic": "project-overview",
+        "timestamp": "2025-06-02T12:32:54.740080"
+      },
+      {
+        "category": "ui-ux",
+        "topic": "current-status-cep-plugin-migrated-from-uxp",
+        "timestamp": "2025-06-02T12:32:54.740397"
+      },
+      {
+        "category": "ui-ux",
+        "topic": "why-cep-over-uxp",
+        "timestamp": "2025-06-02T12:32:54.740616"
+      },
+      {
+        "category": "api-integration",
+        "topic": "critical-files",
+        "timestamp": "2025-06-02T12:32:54.740847"
+      },
+      {
+        "category": "ui-ux",
+        "topic": "quick-start-with-symlinks-recommended",
+        "timestamp": "2025-06-02T12:32:54.741067"
+      },
+      {
+        "category": "debugging",
+        "topic": "enable-cep-debugging",
+        "timestamp": "2025-06-02T12:32:54.741283"
+      },
+      {
+        "category": "core",
+        "topic": "extendscript-communication-working-pattern",
+        "timestamp": "2025-06-02T12:32:54.741537"
+      },
+      {
+        "category": "ui-ux",
+        "topic": "professional-ui-patterns",
+        "timestamp": "2025-06-02T12:32:54.741797"
+      },
+      {
+        "category": "ui-ux",
+        "topic": "design-system",
+        "timestamp": "2025-06-02T12:32:54.742049"
+      },
+      {
+        "category": "automation",
+        "topic": "automated-development-workflow",
+        "timestamp": "2025-06-02T12:32:54.742329"
+      },
+      {
+        "category": "automation",
+        "topic": "python-script-automation",
+        "timestamp": "2025-06-02T12:32:54.742603"
+      },
+      {
+        "category": "automation",
+        "topic": "applescript-for-premiere-control",
+        "timestamp": "2025-06-02T12:32:54.742849"
+      },
+      {
+        "category": "core",
+        "topic": "api-integration",
+        "timestamp": "2025-06-02T12:32:54.743355"
+      },
+      {
+        "category": "api-integration",
+        "topic": "eleven-labs-configuration",
+        "timestamp": "2025-06-02T12:32:54.743661"
+      },
+      {
+        "category": "api-integration",
+        "topic": "file-management",
+        "timestamp": "2025-06-02T12:32:54.744164"
+      },
+      {
+        "category": "debugging",
+        "topic": "common-issues-solutions",
+        "timestamp": "2025-06-02T12:32:54.744537"
+      },
+      {
+        "category": "core",
+        "topic": "extendscript-not-loading",
+        "timestamp": "2025-06-02T12:32:54.744843"
+      },
+      {
+        "category": "debugging",
+        "topic": "debug-port-not-working",
+        "timestamp": "2025-06-02T12:32:54.745134"
+      },
+      {
+        "category": "performance",
+        "topic": "performance-optimization",
+        "timestamp": "2025-06-02T12:32:54.745432"
+      }
+    ],
+    "last_updated": "2025-06-02T12:32:54.745434"
+  }
+}

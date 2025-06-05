@@ -178,7 +178,9 @@ input[type="text"], textarea {
     }
     
     &.loading {
-      position: relative;
+      border-color: #ffa500 !important;
+      background: rgba(255, 165, 0, 0.1) !important;
+      box-shadow: 0 0 0 2px rgba(255, 165, 0, 0.3) !important;
       
       &::after {
         content: '';
@@ -188,8 +190,8 @@ input[type="text"], textarea {
         transform: translateY(-50%);
         width: var(--space-md);
         height: var(--space-md);
-        border: 2px solid rgba(0, 153, 255, 0.3);
-        border-top: 2px solid var(--primary-blue);
+        border: 2px solid rgba(255, 165, 0, 0.3);
+        border-top: 2px solid #ffa500;
         border-radius: 50%;
         animation: spin 1s linear infinite;
       }

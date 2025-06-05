@@ -1,0 +1,8 @@
+"Last login: Sun Jun  1 10:37:58 on console
+richardtran@MacBookPro ~ % sudo rm "/Library/Application Support/Adobe/CEP/extensions/AI-SFX-Generator" && sudo ln -s "/Users/richardtran/Documents/Code/Personal Projects/Premiere Plugins/Ai SFX/AI-SFX-Bolt/dist/cep" "/Library/Application Support/Adobe/CEP/extensions/AI-SFX-Generator"
+Password:
+richardtran@MacBookPro ~ % 
+
+
+
+"

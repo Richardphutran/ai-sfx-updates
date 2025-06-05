@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI SFX Spacebar Debug</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+        .test { margin: 20px 0; padding: 15px; border: 1px solid #444; }
+        textarea { width: 400px; height: 100px; background: #2a2a2a; color: #fff; }
+        .log { margin-top: 10px; padding: 10px; background: #2a2a2a; max-height: 300px; overflow-y: auto; }
+        .success { color: #4f4; }
+        .error { color: #f44; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 AI SFX Spacebar Debug</h1>
+    
+    <div class="test">
+        <h3>Test 1: Direct Console Check</h3>
+        <button onclick="checkConsole()">Check Plugin Console</button>
+        <button onclick="window.open('http://localhost:9230', '_blank')">Open Debug Port</button>
+        <div id="consoleLog" class="log"></div>
+    </div>
+
+    <div class="test">
+        <h3>Test 2: Spacebar Handler</h3>
+        <textarea id="testInput" placeholder="Click here and press spacebar"></textarea>
+        <div id="keyLog" class="log"></div>
+    </div>
+
+    <script>
+        function log(msg, type = '') {
+            const logDiv = document.getElementById('keyLog');
+            const entry = document.createElement('div');
+            entry.className = type;
+            entry.textContent = new Date().toLocaleTimeString() + ': ' + msg;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function checkConsole() {
+            window.open('http://localhost:9230/devtools/inspector.html', '_blank');
+            document.getElementById('consoleLog').innerHTML = 
+                '<div class="success">✅ Opened Chrome DevTools</div>' +
+                '<div>Look for: "🔍 Spacebar pressed - triggering lookup mode"</div>';
+        }
+
+        const input = document.getElementById('testInput');
+        
+        input.addEventListener('keydown', (e) => {
+            log(`keydown: key="${e.key}" keyCode=${e.keyCode} empty=${input.value === ''}`);
+            
+            if (e.key === ' ' && input.value === '') {
+                e.preventDefault();
+                log('✅ Spacebar detected on empty input - preventDefault called', 'success');
+            }
+        });
+
+        input.addEventListener('input', (e) => {
+            log(`input event: value="${input.value}" length=${input.value.length}`);
+        });
+
+        // Instructions
+        log('Instructions: Click textarea and press spacebar', 'success');
+        log('Expected: Should prevent space and log detection');
+    </script>
+</body>
+</html>

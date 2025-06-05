@@ -1,0 +1,3 @@
+#!/bin/bash
+cd "/Users/richardtran/Documents/Code/Personal Projects/Premiere Plugins/Ai SFX"
+python3 validate_simple.py "$@"
