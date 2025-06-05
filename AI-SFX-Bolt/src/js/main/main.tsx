@@ -642,195 +642,47 @@ export const App = () => {
       
       const foldersToScan: string[] = [];
       
-      // Helper function to scan directory for SFX folders (limited depth for performance)
-      const findSFXFolders = (basePath: string, maxDepth: number = 1, currentDepth: number = 0): string[] => {
-        const sfxFolders: string[] = [];
-        
-        if (currentDepth > maxDepth || !fs.existsSync(basePath)) {
-          return sfxFolders;
-        }
-        
-        try {
-          const items = fs.readdirSync(basePath);
-          
-          for (const item of items) {
-            // Skip hidden folders and system folders
-            if (item.startsWith('.') || item === 'node_modules' || item === 'Library') {
-              continue;
-            }
-            
-            const fullPath = `${basePath}/${item}`;
-            
-            try {
-              const stats = fs.statSync(fullPath);
-              
-              if (stats.isDirectory()) {
-                const lowerItem = item.toLowerCase();
-                
-                // More specific matching for SFX folders only
-                if (lowerItem === 'sfx' || 
-                    lowerItem === 'ai sfx' || 
-                    lowerItem === 'aisfx' ||
-                    lowerItem === 'sound effects' ||
-                    lowerItem === 'audio' ||
-                    lowerItem.includes('sfx')) {
-                  sfxFolders.push(fullPath);
-                  console.log(`🎯 Found SFX folder: ${fullPath}`);
-                  
-                  // IMPORTANT: Also scan all subdirectories of SFX folders
-                  // This ensures we find audio files in nested folders like /SFX/explosions/
-                  const getAllSubfolders = (dir: string): string[] => {
-                    let allFolders: string[] = [];
-                    try {
-                      const subItems = fs.readdirSync(dir);
-                      for (const subItem of subItems) {
-                        if (subItem.startsWith('.')) continue;
-                        const subPath = `${dir}/${subItem}`;
-                        try {
-                          if (fs.statSync(subPath).isDirectory()) {
-                            allFolders.push(subPath);
-                            // Recursively get all nested folders
-                            allFolders = allFolders.concat(getAllSubfolders(subPath));
-                          }
-                        } catch (e) {}
-                      }
-                    } catch (e) {}
-                    return allFolders;
-                  };
-                  
-                  // Add all subfolders of this SFX folder
-                  const subfolders = getAllSubfolders(fullPath);
-                  sfxFolders.push(...subfolders);
-                }
-                
-                // Only recurse if we're not too deep
-                if (currentDepth < maxDepth) {
-                  const subFolders = findSFXFolders(fullPath, maxDepth, currentDepth + 1);
-                  sfxFolders.push(...subFolders);
-                }
-              }
-            } catch (e) {
-              // Skip folders we can't access
-            }
-          }
-        } catch (e) {
-          console.warn(`⚠️ Could not scan: ${basePath}`);
-        }
-        
-        return sfxFolders;
-      };
-      
       if (projectPath.success && projectPath.projectDir) {
         console.log(`📁 Project directory: ${projectPath.projectDir}`);
         
-        // 1. Search within the project directory (max 1 level deep for performance)
-        const projectSFXFolders = findSFXFolders(projectPath.projectDir, 1);
-        foldersToScan.push(...projectSFXFolders);
+        // ONLY scan the exact paths where we save files
+        // 1. Primary location: Project/SFX/ai sfx
+        const primaryPath = `${projectPath.projectDir}/SFX/ai sfx`;
+        if (fs.existsSync(primaryPath)) {
+          console.log(`🎯 Found primary AI SFX folder: ${primaryPath}`);
+          foldersToScan.push(primaryPath);
+        }
         
-        // 2. Also check for direct SFX folder in project root (common case)
-        const directSFXPath = `${projectPath.projectDir}/SFX`;
-        if (fs.existsSync(directSFXPath) && !foldersToScan.includes(directSFXPath)) {
-          console.log(`🎯 Found direct SFX folder: ${directSFXPath}`);
-          foldersToScan.push(directSFXPath);
+        // 2. Also scan Project/SFX folder (parent of ai sfx) for manually added files
+        const projectSFXPath = `${projectPath.projectDir}/SFX`;
+        if (fs.existsSync(projectSFXPath)) {
+          console.log(`🎯 Found project SFX folder: ${projectSFXPath}`);
+          foldersToScan.push(projectSFXPath);
           
-          // Add all its subfolders too
-          const getAllSubfolders = (dir: string): string[] => {
-            let allFolders: string[] = [];
-            try {
-              const items = fs.readdirSync(dir);
-              for (const item of items) {
-                if (item.startsWith('.')) continue;
-                const subPath = `${dir}/${item}`;
-                if (fs.statSync(subPath).isDirectory()) {
-                  allFolders.push(subPath);
-                  allFolders = allFolders.concat(getAllSubfolders(subPath));
-                }
+          // Add immediate subfolders of SFX (but not recursive to avoid deep scanning)
+          try {
+            const items = fs.readdirSync(projectSFXPath);
+            for (const item of items) {
+              if (item.startsWith('.')) continue;
+              const subPath = `${projectSFXPath}/${item}`;
+              if (fs.statSync(subPath).isDirectory()) {
+                foldersToScan.push(subPath);
               }
-            } catch (e) {}
-            return allFolders;
-          };
-          
-          const subfolders = getAllSubfolders(directSFXPath);
-          foldersToScan.push(...subfolders);
-        }
-        
-        // 3. CRITICAL: Also scan parent directory (Desktop) for SFX folders
-        // This finds folders like "/Users/user/Desktop/SFX AI/" that are siblings to the project
-        const projectParentDir = projectPath.projectDir.split('/').slice(0, -1).join('/');
-        console.log(`🔍 Scanning parent directory for SFX folders: ${projectParentDir}`);
-        const parentSFXFolders = findSFXFolders(projectParentDir, 1); // Only 1 level deep to avoid scanning entire system
-        foldersToScan.push(...parentSFXFolders);
-        
-        // 4. Common SFX locations on Desktop
-        const commonSFXPaths = [
-          `${projectParentDir}/SFX`,
-          `${projectParentDir}/SFX AI`, 
-          `${projectParentDir}/Sound Effects`,
-          `${projectParentDir}/Audio`,
-          `${projectParentDir}/Sounds`
-        ];
-        
-        for (const sfxPath of commonSFXPaths) {
-          if (fs.existsSync(sfxPath) && !foldersToScan.includes(sfxPath)) {
-            console.log(`🎯 Found common SFX folder: ${sfxPath}`);
-            foldersToScan.push(sfxPath);
-            
-            // Add all subfolders
-            const getAllSubfolders = (dir: string): string[] => {
-              let allFolders: string[] = [];
-              try {
-                const items = fs.readdirSync(dir);
-                for (const item of items) {
-                  if (item.startsWith('.')) continue;
-                  const subPath = `${dir}/${item}`;
-                  if (fs.statSync(subPath).isDirectory()) {
-                    allFolders.push(subPath);
-                    allFolders = allFolders.concat(getAllSubfolders(subPath));
-                  }
-                }
-              } catch (e) {}
-              return allFolders;
-            };
-            
-            const subfolders = getAllSubfolders(sfxPath);
-            foldersToScan.push(...subfolders);
-          }
-        }
-        
-        // Optionally check immediate parent (in case SFX folder is one level up)
-        const parentDir = projectPath.projectDir.split('/').slice(0, -1).join('/');
-        if (parentDir) {
-          // Only look for direct SFX folders in parent, not recursive
-          const parentPath = `${parentDir}/SFX`;
-          if (fs.existsSync(parentPath) && !foldersToScan.includes(parentPath)) {
-            console.log(`🎯 Found parent SFX folder: ${parentPath}`);
-            foldersToScan.push(parentPath);
-            
-            // Add all its subfolders
-            const getAllSubfolders = (dir: string): string[] => {
-              let allFolders: string[] = [];
-              try {
-                const items = fs.readdirSync(dir);
-                for (const item of items) {
-                  if (item.startsWith('.')) continue;
-                  const subPath = `${dir}/${item}`;
-                  if (fs.statSync(subPath).isDirectory()) {
-                    allFolders.push(subPath);
-                    allFolders = allFolders.concat(getAllSubfolders(subPath));
-                  }
-                }
-              } catch (e) {}
-              return allFolders;
-            };
-            
-            const subfolders = getAllSubfolders(parentPath);
-            foldersToScan.push(...subfolders);
+            }
+          } catch (e) {
+            console.warn(`⚠️ Could not scan subfolders of: ${projectSFXPath}`);
           }
         }
       } else {
-        // Project exists but not saved yet - try to work with bins only
-        console.warn('⚠️ Project not saved yet - will only scan project bins, no filesystem search');
-        console.log('💡 To enable full search: Save your project (Cmd+S) and reload the plugin');
+        // Project not saved - check fallback Desktop location
+        console.warn('⚠️ Project not saved yet - checking Desktop fallback location');
+        const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
+        const fallbackPath = `${userPath}/Desktop/SFX AI`;
+        
+        if (fs.existsSync(fallbackPath)) {
+          console.log(`🎯 Found fallback Desktop SFX folder: ${fallbackPath}`);
+          foldersToScan.push(fallbackPath);
+        }
       }
       
       // Remove duplicates
