@@ -22,6 +22,8 @@ interface SFXState {
   showSFXDropdown: boolean;
   selectedDropdownIndex: number;
   promptInfluence: number;
+  lastScanTime: number; // Track when we last scanned
+  isScanningFiles: boolean; // Show loading state
 }
 
 interface SFXFileInfo {
@@ -79,11 +81,15 @@ export const App = () => {
     filteredSFXFiles: [],
     showSFXDropdown: false,
     selectedDropdownIndex: -1,
-    promptInfluence: 0.5
+    promptInfluence: 0.5,
+    lastScanTime: 0,
+    isScanningFiles: false
   });
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const timelineUpdateRef = useRef<NodeJS.Timeout>();
+  const cachedFileInfoRef = useRef<SFXFileInfo[]>([]);
+  const CACHE_DURATION = 30000; // 30 seconds cache
 
   // Prevent drag behavior
   useEffect(() => {
@@ -636,8 +642,8 @@ export const App = () => {
       
       const foldersToScan: string[] = [];
       
-      // Helper function to scan directory for SFX folders (limited to project scope)
-      const findSFXFolders = (basePath: string, maxDepth: number = 2, currentDepth: number = 0): string[] => {
+      // Helper function to scan directory for SFX folders (limited depth for performance)
+      const findSFXFolders = (basePath: string, maxDepth: number = 1, currentDepth: number = 0): string[] => {
         const sfxFolders: string[] = [];
         
         if (currentDepth > maxDepth || !fs.existsSync(basePath)) {
@@ -717,8 +723,8 @@ export const App = () => {
       if (projectPath.success && projectPath.projectDir) {
         console.log(`📁 Project directory: ${projectPath.projectDir}`);
         
-        // 1. Search within the project directory (max 2 levels deep)
-        const projectSFXFolders = findSFXFolders(projectPath.projectDir, 2);
+        // 1. Search within the project directory (max 1 level deep for performance)
+        const projectSFXFolders = findSFXFolders(projectPath.projectDir, 1);
         foldersToScan.push(...projectSFXFolders);
         
         // 2. Also check for direct SFX folder in project root (common case)
@@ -1259,25 +1265,55 @@ export const App = () => {
       console.log('🔍 Spacebar pressed - triggering lookup mode');
       e.preventDefault(); // Prevent space from being added to textarea
       
-      // Trigger lookup mode immediately
-      (async () => {
-        const allFiles = await scanExistingSFXFiles();
-        console.log(`📚 Loaded ${allFiles.length} SFX files for lookup`);
-        
-        // Keep full filenames (with extensions) for display
-        const fileNames = allFiles.map(f => f.filename);
+      // Check if we have cached data that's still fresh
+      const now = Date.now();
+      const cacheExpired = now - state.lastScanTime > CACHE_DURATION;
+      
+      if (cachedFileInfoRef.current.length > 0 && !cacheExpired) {
+        // Use cached data for instant response
+        console.log(`📚 Using cached data: ${cachedFileInfoRef.current.length} SFX files`);
+        const fileNames = cachedFileInfoRef.current.map(f => f.filename);
         
         setState(prev => ({ 
           ...prev, 
           isLookupMode: true, 
           showSFXDropdown: true,
-          prompt: ' ', // Add the space to maintain consistency
-          allSFXFileInfo: allFiles,
+          prompt: ' ',
+          allSFXFileInfo: cachedFileInfoRef.current,
           existingSFXFiles: fileNames,
           filteredSFXFiles: fileNames,
           selectedDropdownIndex: fileNames.length > 0 ? 0 : -1
         }));
-      })().catch(console.error);
+      } else {
+        // Show loading state and scan in background
+        setState(prev => ({ 
+          ...prev, 
+          isLookupMode: true, 
+          showSFXDropdown: true,
+          prompt: ' ',
+          isScanningFiles: true
+        }));
+        
+        // Scan files asynchronously
+        (async () => {
+          const allFiles = await scanExistingSFXFiles();
+          console.log(`📚 Loaded ${allFiles.length} SFX files for lookup`);
+          
+          // Cache the results
+          cachedFileInfoRef.current = allFiles;
+          const fileNames = allFiles.map(f => f.filename);
+          
+          setState(prev => ({ 
+            ...prev, 
+            allSFXFileInfo: allFiles,
+            existingSFXFiles: fileNames,
+            filteredSFXFiles: fileNames,
+            selectedDropdownIndex: fileNames.length > 0 ? 0 : -1,
+            lastScanTime: now,
+            isScanningFiles: false
+          }));
+        })().catch(console.error);
+      }
       return;
     }
     
@@ -1515,7 +1551,11 @@ export const App = () => {
                 transform: `translateY(-${state.selectedDropdownIndex * 32}px)`
               }}
             >
-              {state.filteredSFXFiles.length > 0 ? (
+              {state.isScanningFiles ? (
+                <div className="sfx-dropdown-item sfx-dropdown-loading">
+                  🔍 Scanning SFX files...
+                </div>
+              ) : state.filteredSFXFiles.length > 0 ? (
                 state.filteredSFXFiles.map((filename, index) => (
                   <div 
                     key={filename}

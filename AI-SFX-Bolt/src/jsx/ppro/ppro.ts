@@ -726,11 +726,11 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
             result.debug.attemptingMoveToSFXBin = true;
         }
         
-        // Add longer delay to allow import to complete properly
-        // ExtendScript doesn't have setTimeout, but we can use a simple loop
+        // Brief pause to allow import to register (reduced from 1500ms)
+        // Only wait 100ms as a minimal safety buffer
         const startTime = new Date().getTime();
-        while (new Date().getTime() - startTime < 1500) {
-            // Wait 1.5 seconds for import to complete - Premiere needs more time
+        while (new Date().getTime() - startTime < 100) {
+            // Minimal wait for import registration
         }
         
         // Find imported item with enhanced search
