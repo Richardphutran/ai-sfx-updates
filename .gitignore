@@ -1,0 +1,64 @@
+# Development and working files
+*.py
+*.md
+!README.md
+
+# AI-SFX-Bolt specific ignores  
+AI-SFX-Bolt/CLAUDE.md
+AI-SFX-Bolt/FIX_CONNECTION_REFUSED.md
+
+# Node modules
+node_modules/
+AI-SFX-Bolt/node_modules/
+
+# Build outputs
+dist/
+AI-SFX-Bolt/dist/
+build/
+
+# Logs
+*.log
+AI-SFX-Bolt/*.log
+
+# Cache
+.cache/
+.vite/
+AI-SFX-Bolt/.vite/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Debug files
+.debug
+*.debug
+
+# Package manager files
+package-lock.json
+yarn.lock
+AI-SFX-Bolt/package-lock.json
+AI-SFX-Bolt/yarn.lock
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+AI-SFX-Bolt/__pycache__/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
