@@ -3,6 +3,32 @@
 *.md
 !README.md
 
+# SECURITY: Sensitive files and directories
+MultiPluginSystem/
+AI-SFX-Bolt/MultiPluginSystem/
+AI-SFX-Bolt/AI-SFX-Bolt/
+**/MultiPlugin*/
+**/multiplugin*/
+
+# Screenshots and personal images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*screenshot*
+*Screen*
+icons/
+
+# API Keys and secrets (scan for these patterns)
+*api*key*
+*secret*
+*token*
+*password*
+.env*
+config.json
+*config*.json
+
 # AI-SFX-Bolt specific ignores  
 AI-SFX-Bolt/CLAUDE.md
 AI-SFX-Bolt/FIX_CONNECTION_REFUSED.md
