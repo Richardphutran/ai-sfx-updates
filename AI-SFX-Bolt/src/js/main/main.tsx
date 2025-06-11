@@ -24,6 +24,15 @@ interface SFXState {
   promptInfluence: number;
   lastScanTime: number; // Track when we last scanned
   isScanningFiles: boolean; // Show loading state
+  // Menu system state
+  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files';
+  // Track targeting system
+  trackTargetingEnabled: boolean;
+  selectedTrack: string;
+  availableTracks: string[];
+  volume: number;
+  // Auto-detected targeted track from Premiere
+  detectedTargetedTrack: { name: string; number: number } | null;
 }
 
 interface SFXFileInfo {
@@ -39,30 +48,6 @@ interface SFXFileInfo {
 }
 
 export const App = () => {
-  // CRITICAL: Verify this is the correct plugin - NEVER show wrong plugin content
-  useEffect(() => {
-    const extensionId = csi.getExtensionID();
-    const expectedId = "com.ai.sfx.generator";
-    
-    // Allow both main extension ID and panel-specific ID
-    if (extensionId !== expectedId && !extensionId.startsWith(expectedId)) {
-      console.error(`🚨 CRITICAL ERROR: Wrong plugin loaded!`);
-      console.error(`Expected: ${expectedId} (or variant)`);
-      console.error(`Got: ${extensionId}`);
-      
-      // Force correct identity
-      document.title = "AI SFX Generator";
-      
-      // Clear any cached content
-      if (window.location.port !== "3030") {
-        console.error(`🚨 WRONG PORT! Redirecting to correct port...`);
-        window.location.href = "http://localhost:3030/main/index.html";
-        return;
-      }
-    } else {
-      console.log(`✅ AI SFX Generator loaded correctly (ID: ${extensionId})`);
-    }
-  }, []);
 
   const [bgColor, setBgColor] = useState("#2a2a2a");
   const [state, setState] = useState<SFXState>({
@@ -83,7 +68,15 @@ export const App = () => {
     selectedDropdownIndex: -1,
     promptInfluence: 0.5,
     lastScanTime: 0,
-    isScanningFiles: false
+    isScanningFiles: false,
+    // Menu system state
+    menuMode: 'normal',
+    // Track targeting system  
+    trackTargetingEnabled: true,
+    selectedTrack: 'A5*',
+    availableTracks: ['A1', 'A2', 'A3', 'A4', 'A5*', 'A6', 'A7'],
+    volume: 0,
+    detectedTargetedTrack: null
   });
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -174,87 +167,9 @@ export const App = () => {
 
   // Show status in console for debugging
   const showStatus = useCallback((message: string, duration = 0) => {
-    console.log('Status:', message);
+    // Status display for user feedback
   }, []);
 
-  // Test ExtendScript connectivity on component mount
-  const testExtendScriptConnection = useCallback(async () => {
-    try {
-      console.log('🧪 Testing basic ExtendScript connectivity...');
-      
-      // Test 1: Basic CSInterface test
-      const csi = new CSInterface();
-      console.log('✅ CSInterface available:', !!csi);
-      
-      // Test 2: Simple script evaluation
-      const simpleResult = await new Promise((resolve) => {
-        csi.evalScript('1 + 1', (result) => {
-          console.log('🧮 Simple math result:', result);
-          resolve(result);
-        });
-      });
-      
-      // Test 3: Test namespace availability
-      const namespaceTest = await new Promise((resolve) => {
-        csi.evalScript('typeof app', (result) => {
-          console.log('📱 App object type:', result);
-          resolve(result);
-        });
-      });
-      
-      // Test 4: Test our namespace
-      const nsTest = await new Promise((resolve) => {
-        csi.evalScript(`
-          try {
-            var host = typeof $ !== 'undefined' ? $ : window;
-            var ns = "com.ai.sfx.generator";
-            var result = {
-              hasHost: typeof host !== 'undefined',
-              hasNamespace: typeof host[ns] !== 'undefined',
-              namespaceType: typeof host[ns],
-              availableFunctions: typeof host[ns] !== 'undefined' ? Object.keys(host[ns]) : []
-            };
-            JSON.stringify(result);
-          } catch (e) {
-            JSON.stringify({error: e.toString()});
-          }
-        `, (result) => {
-          console.log('🏠 Namespace test result:', result);
-          try {
-            const parsed = JSON.parse(result);
-            console.log('📋 Parsed namespace test:', parsed);
-          } catch (e) {
-            console.log('❌ Failed to parse namespace test:', e);
-          }
-          resolve(result);
-        });
-      });
-      
-      // Test 5: Direct function call
-      const directFunctionTest = await new Promise((resolve) => {
-        csi.evalScript(`
-          try {
-            var host = typeof $ !== 'undefined' ? $ : window;
-            var ns = "com.ai.sfx.generator";
-            if (host[ns] && host[ns].getAppInfo) {
-              var result = host[ns].getAppInfo();
-              JSON.stringify({success: true, result: result});
-            } else {
-              JSON.stringify({success: false, error: "Function not available"});
-            }
-          } catch (e) {
-            JSON.stringify({success: false, error: e.toString()});
-          }
-        `, (result) => {
-          console.log('🎯 Direct function test result:', result);
-          resolve(result);
-        });
-      });
-      
-    } catch (error) {
-      console.error('❌ ExtendScript connection test failed:', error);
-    }
-  }, []);
 
   // Update timeline info (optimized with change detection)
   const updateTimelineInfo = useCallback(async () => {
@@ -273,7 +188,7 @@ export const App = () => {
         return prev;
       });
     } catch (error) {
-      console.log('Timeline update failed:', error);
+      // Timeline update failed
     }
   }, []);
 
@@ -286,7 +201,6 @@ export const App = () => {
       manualModeActive: false,
       autoMode: false
     }));
-    console.log('🎯 IN-OUT MODE ACTIVATED');
   }, []);
 
   const activateManualMode = useCallback(() => {
@@ -296,7 +210,6 @@ export const App = () => {
       manualModeActive: true,
       autoMode: false
     }));
-    console.log('🎯 MANUAL MODE ACTIVATED');
   }, []);
 
   const activateAutoMode = useCallback(() => {
@@ -306,18 +219,34 @@ export const App = () => {
       manualModeActive: false,
       autoMode: true
     }));
-    console.log('🎯 AUTO MODE ACTIVATED');
   }, []);
 
   // Handle generation
   const handleGenerate = useCallback(async () => {
-    if (!state.prompt.trim() || state.isGenerating) return;
-
-    if (!state.apiKey) {
-      showStatus('Please set your API key first', 3000);
+    console.log('🎬 handleGenerate called with prompt:', `"${state.prompt}"`, 'isGenerating:', state.isGenerating);
+    // Allow empty prompt check but don't block if already generating
+    if (!state.prompt.trim()) {
+      console.log('⚠️ Empty prompt - returning early');
+      return;
+    }
+    
+    // Prevent multiple simultaneous generations
+    if (state.isGenerating) {
+      showStatus('Already generating, please wait...', 2000);
       return;
     }
 
+    if (!state.apiKey) {
+      console.log('❌ No API key found - stopping generation');
+      showStatus('Please set your API key first', 3000);
+      return;
+    }
+    
+    console.log('✅ API key found, continuing with generation...');
+
+    // Store the prompt before starting generation
+    const promptToGenerate = state.prompt.trim();
+    
     setState(prev => ({ ...prev, isGenerating: true }));
     showStatus('Detecting timeline...');
 
@@ -326,16 +255,10 @@ export const App = () => {
       const timelineInfo = await evalTS("getSequenceInfo");
       const currentPlayheadPosition = timelineInfo?.playheadPosition || timelineInfo?.playhead?.seconds || 0;
       
-      console.log(`🎯 Captured playhead position at generation start: ${currentPlayheadPosition}s`);
       
       let duration = state.currentDuration;
       let placementPosition: number | null = null;
       
-      console.log('🧪 GENERATION CONDITIONS:');
-      console.log('useInOutMode:', state.useInOutMode);
-      console.log('timelineInfo.success:', timelineInfo?.success);
-      console.log('timelineInfo.hasInPoint:', timelineInfo?.hasInPoint);
-      console.log('timelineInfo.hasOutPoint:', timelineInfo?.hasOutPoint);
       
       // Check for In-N-Out mode
       if (state.useInOutMode && timelineInfo?.success && timelineInfo?.hasInPoint && timelineInfo?.hasOutPoint) {
@@ -343,10 +266,6 @@ export const App = () => {
         const outPointSeconds = timelineInfo.outPoint?.seconds ?? 0;
         const timelineDuration = outPointSeconds - inPointSeconds;
         
-        console.log('=== DETECTED USER TIMELINE VALUES ===');
-        console.log(`IN POINT: ${timelineInfo.inPoint?.formatted} (${inPointSeconds}s)`);
-        console.log(`OUT POINT: ${timelineInfo.outPoint?.formatted} (${outPointSeconds}s)`);
-        console.log(`DURATION: ${timelineInfo.duration?.formatted} (${timelineDuration}s)`);
         
         if (timelineDuration > 22) {
           showStatus(`Timeline duration too long (${Math.round(timelineDuration)}s). Maximum is 22s for AI generation.`, 4000);
@@ -367,116 +286,88 @@ export const App = () => {
         }
       }
       
-      console.log('🚀 STARTING GENERATION:', { prompt: state.prompt, duration, placementPosition, promptInfluence: state.promptInfluence });
       
-      // First test basic ExtendScript connection
-      console.log('🧪 Testing ExtendScript connection...');
+      // Test ExtendScript connection
       try {
-        // Temporarily use getAppInfo as a connection test
         const basicTest = await evalTS("getAppInfo");
-        console.log('🧪 Basic ExtendScript test result:', basicTest);
-        
         if (!basicTest) {
           throw new Error('ExtendScript connection failed');
         }
       } catch (extendScriptError) {
-        console.error('❌ ExtendScript test failed:', extendScriptError);
         throw new Error('Cannot connect to Premiere Pro. Make sure a project is open.');
       }
       
       showStatus('Generating SFX...');
       
       // Generate audio using Eleven Labs API
-      const audioData = await generateSFX(state.prompt, duration, state.apiKey, state.promptInfluence);
+      const audioData = await generateSFX(promptToGenerate, duration, state.apiKey, state.promptInfluence);
       
       showStatus('Placing on timeline...');
       
       // Save audio file
-      const filePath = await saveAudioFile(audioData, state.prompt);
-      console.log('📁 Audio file saved:', filePath);
+      const filePath = await saveAudioFile(audioData, promptToGenerate);
       
-      // Debug timeline placement prerequisites - use sequence info for now
-      const timelineDebug = await evalTS("getSequenceInfo");
-      console.log('🔍 Timeline debug info:', timelineDebug);
       
       // Place audio on timeline with enhanced error handling
       let result: PlacementResult;
       
-      console.log('🎯 Starting timeline placement...');
-      console.log('📄 File path:', filePath);
-      console.log('⏰ Placement position:', placementPosition);
+      
+      // Determine target track index based on track targeting settings
+      let targetTrackIndex = 0; // Default to first track
+      
+      if (state.trackTargetingEnabled) {
+        // Detect the currently targeted track in real-time (fresh detection for generation)
+        const targetedTrack = await detectTargetedTrack();
+        
+        if (targetedTrack && targetedTrack.number) {
+          targetTrackIndex = targetedTrack.number - 1;
+          showStatus(`Placing on ${targetedTrack.name}...`);
+        } else {
+          showStatus('No track targeted - using auto placement...');
+        }
+      } else {
+        showStatus('Using smart auto-placement...');
+      }
       
       try {
         if (placementPosition !== null) {
-          console.log('📍 Using In-N-Out placement at:', placementPosition, 'seconds');
-          result = await evalTS("importAndPlaceAudioAtTime", filePath, placementPosition, 0);
+          result = await evalTS("importAndPlaceAudioAtTime", filePath, placementPosition, targetTrackIndex);
         } else {
-          console.log('📍 Using captured playhead position at:', currentPlayheadPosition, 'seconds');
-          result = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, 0);
+          result = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex);
         }
         
-        console.log('✅ Timeline placement result:', result);
         
-        // Log detailed debug info if available
-        if (result?.debug) {
-          console.log('📊 Import Debug Info:');
-          if (result.debug.binsBeforeImport) {
-            console.log('  Pre-import bins:', result.debug.binsBeforeImport);
-          }
-          if (result.debug.binsAfterImport) {
-            console.log('  Post-import bins:', result.debug.binsAfterImport);
-          }
-          if (result.debug.foundInBin !== undefined) {
-            console.log('  Found in bin:', result.debug.foundInBin);
-          }
-          if (result.debug.itemLocationBeforeMove) {
-            console.log('  Item location before move:', result.debug.itemLocationBeforeMove);
-          }
-          if (result.debug.itemLocationAfterMove) {
-            console.log('  Item location after move:', result.debug.itemLocationAfterMove);
-          }
-          if (result.debug.movedToBin !== undefined) {
-            console.log('  Move result:', result.debug.movedToBin);
-          }
-          if (result.debug.foundExistingSFXBin || result.debug.createdNewSFXBin) {
-            console.log('  SFX Bin:', result.debug.foundExistingSFXBin || result.debug.createdNewSFXBin);
-          }
-        }
+        
         
         // Enhanced error reporting
         if (!result || !result.success) {
-          console.error('❌ Timeline placement failed:', {
-            error: result?.error || 'Unknown error',
-            step: result?.step || 'Unknown step',
-            debug: result?.debug || {},
-            fullResult: result
-          });
-          
-          // Try a simpler fallback approach
-          console.log('🔄 Trying fallback placement method...');
           showStatus('Trying alternative placement...');
           
-          // Fallback: Try with captured playhead position
-          const fallbackResult = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, 0);
-          console.log('🔄 Fallback result:', fallbackResult);
+          // Fallback: Try with captured playhead position and same target track
+          const fallbackResult = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex);
           
           if (fallbackResult && fallbackResult.success) {
             result = fallbackResult;
-            console.log('✅ Fallback placement succeeded!');
           } else {
             throw new Error(result?.error || 'Timeline placement failed completely');
           }
         }
       } catch (placementError) {
-        console.error('❌ Critical placement error:', placementError);
-        
         // Last resort: Show user where file was saved
         showStatus(`SFX saved to ${filePath}. Please manually drag to timeline.`, 5000);
         throw new Error(`Timeline placement failed: ${placementError instanceof Error ? placementError.message : String(placementError)}`);
       }
       
       if (result.success) {
-        setState(prev => ({ ...prev, prompt: "" }));
+        // Only clear the prompt that was actually generated, not the current one
+        setState(prev => {
+          // If user hasn't typed anything new, clear the prompt
+          if (prev.prompt.trim() === promptToGenerate) {
+            return { ...prev, prompt: "" };
+          }
+          // Otherwise keep their new prompt intact
+          return prev;
+        });
         
         let statusMsg = 'SFX added to timeline!';
         if (placementPosition !== null && timelineInfo?.inPoint) {
@@ -497,7 +388,6 @@ export const App = () => {
       }
 
     } catch (error) {
-      console.error('Generation error:', error);
       showStatus(`Error: ${error instanceof Error ? error.message : String(error)}`, 4000);
     } finally {
       setState(prev => ({ ...prev, isGenerating: false }));
@@ -585,13 +475,11 @@ export const App = () => {
         // Return project folder > SFX > ai sfx path
         return `${result.projectDir}/SFX/ai sfx`;
       } else {
-        console.warn('Could not get project path:', result.error);
         // Fallback to desktop path
         const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
         return `${userPath}/Desktop/SFX AI`;
       }
     } catch (error) {
-      console.error('Error getting project path:', error);
       // Fallback to desktop path
       const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
       return `${userPath}/Desktop/SFX AI`;
@@ -604,7 +492,6 @@ export const App = () => {
     
     try {
       // 1. Scan both main SFX folder and ai sfx subfolder
-      console.log('🔍 Getting project path...');
       const projectPath = await new Promise<any>((resolve) => {
         // Use direct namespace access instead of evalTS
         csi.evalScript(`
@@ -621,20 +508,15 @@ export const App = () => {
             JSON.stringify({success: false, error: e.toString()});
           }
         `, (result) => {
-          console.log('📦 Raw getProjectPath result:', result);
           try {
             // If result already looks like JSON, parse it. Otherwise, it might be direct from function
             if (result.startsWith('{') || result.startsWith('[')) {
               const parsed = JSON.parse(result);
-              console.log('📦 Parsed getProjectPath result:', parsed);
               resolve(parsed);
             } else {
-              console.log('📦 Non-JSON result:', result);
               resolve({ success: false, error: 'Non-JSON result: ' + result });
             }
           } catch (e) {
-            console.error('❌ Failed to parse getProjectPath result:', e);
-            console.log('Raw result was:', result);
             resolve({ success: false, error: 'Parse error: ' + e });
           }
         });
@@ -643,13 +525,10 @@ export const App = () => {
       const foldersToScan: string[] = [];
       
       if (projectPath.success && projectPath.projectDir) {
-        console.log(`📁 Project directory: ${projectPath.projectDir}`);
-        
         // ONLY scan the exact paths where we save files
         // 1. Primary location: Project/SFX/ai sfx
         const primaryPath = `${projectPath.projectDir}/SFX/ai sfx`;
         if (fs.existsSync(primaryPath)) {
-          console.log(`🎯 Found primary AI SFX folder: ${primaryPath}`);
           foldersToScan.push(primaryPath);
         }
         
@@ -670,17 +549,15 @@ export const App = () => {
               }
             }
           } catch (e) {
-            console.warn(`⚠️ Could not scan subfolders of: ${projectSFXPath}`);
+            // Skip subfolders that can't be read
           }
         }
       } else {
         // Project not saved - check fallback Desktop location
-        console.warn('⚠️ Project not saved yet - checking Desktop fallback location');
         const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
         const fallbackPath = `${userPath}/Desktop/SFX AI`;
         
         if (fs.existsSync(fallbackPath)) {
-          console.log(`🎯 Found fallback Desktop SFX folder: ${fallbackPath}`);
           foldersToScan.push(fallbackPath);
         }
       }
@@ -688,11 +565,9 @@ export const App = () => {
       // Remove duplicates
       const uniqueFolders = [...new Set(foldersToScan)];
       
-      console.log(`📁 Found ${uniqueFolders.length} folders to scan:`, uniqueFolders);
       
       // Scan each folder recursively
       for (const sfxPath of uniqueFolders) {
-        console.log(`📂 Scanning folder: ${sfxPath}`);
         
         // Recursive function to scan directories
         function scanDirectoryRecursively(dirPath: string, relativePath = ''): SFXFileInfo[] {
@@ -700,7 +575,6 @@ export const App = () => {
           
           try {
             const items = fs.readdirSync(dirPath);
-            console.log(`📂 Scanning directory: ${dirPath} (${items.length} items)`);
             
             for (const item of items) {
               const fullItemPath = `${dirPath}/${item}`;
@@ -711,7 +585,6 @@ export const App = () => {
                 
                 if (stats.isDirectory()) {
                   // Recursively scan subdirectory
-                  console.log(`📁 Found subdirectory: ${item}`);
                   const subFiles = scanDirectoryRecursively(fullItemPath, itemRelativePath);
                   files.push(...subFiles);
                 } else if (stats.isFile()) {
@@ -728,7 +601,6 @@ export const App = () => {
                   
                   if (isAudioFile) {
                     // Found an audio file
-                    console.log(`🎵 Found audio file: ${itemRelativePath}`);
                     
                     // Remove file extension (supports multiple formats)
                     const basename = item.replace(/\.(mp3|wav|aac|m4a|flac|ogg|aiff|aif)$/i, '');
@@ -742,14 +614,12 @@ export const App = () => {
                     if (newSuffixMatch) {
                       prompt = newSuffixMatch[1];
                       number = parseInt(newSuffixMatch[2]);
-                      console.log(`📝 Parsed new suffix format: "${basename}" → prompt: "${prompt}", number: ${number}`);
                     } else {
                       // Pattern 2: OLD PREFIX FORMAT - "001 explosion sound" (number prefix with spaces)
                       const oldPrefixMatch = basename.match(/^(\d+)\s+(.+)$/);
                       if (oldPrefixMatch) {
                         number = parseInt(oldPrefixMatch[1]);
                         prompt = oldPrefixMatch[2];
-                        console.log(`📝 Parsed old prefix format: "${basename}" → number: ${number}, prompt: "${prompt}"`);
                       } else {
                         // Pattern 3: OLD UNDERSCORE FORMAT - "prompt_001_timestamp" or "prompt_1_timestamp" 
                         const oldNumberMatch = basename.match(/(.+?)_(\d+)_(.+)$/);
@@ -781,35 +651,27 @@ export const App = () => {
                       source: 'filesystem' as const
                     };
                     
-                    // Debug log for cat files
-                    if (prompt.toLowerCase().includes('cat')) {
-                      console.log(`🐱 Cat file found:`, fileInfo);
-                    }
                     
                     files.push(fileInfo);
                   }
                 }
               } catch (statError) {
-                console.warn(`⚠️ Could not stat item: ${fullItemPath}`, statError);
+                // Skip items that can't be read
               }
             }
           } catch (readError) {
-            console.error(`❌ Could not read directory: ${dirPath}`, readError);
+            // Skip directories that can't be read
           }
           
           return files;
         }
         
         const filesystemFiles = scanDirectoryRecursively(sfxPath);
-        console.log(`✅ Found ${filesystemFiles.length} files in ${sfxPath}`);
         allFiles.push(...filesystemFiles);
       }
       
-      console.log(`📁 Total filesystem files from all folders: ${allFiles.length}`);
-      console.log('📋 All files before deduplication:', allFiles.map(f => ({ filename: f.filename, path: f.path, prompt: f.prompt })));
       
       // 2. Scan project bins named "sfx" or "ai sfx"
-      console.log('🎬 Scanning project bins...');
       const projectBinResult = await new Promise<any>((resolve) => {
         // Use direct namespace access for bin scanning too
         csi.evalScript(`
@@ -826,27 +688,20 @@ export const App = () => {
             JSON.stringify({success: false, error: e.toString(), files: []});
           }
         `, (result) => {
-          console.log('📦 Raw project bin result:', result);
           try {
             if (result.startsWith('{') || result.startsWith('[')) {
               const parsed = JSON.parse(result);
-              console.log('📦 Parsed project bin result:', parsed);
               resolve(parsed);
             } else {
-              console.log('📦 Non-JSON bin result:', result);
               resolve({ success: false, files: [], error: 'Non-JSON result: ' + result });
             }
           } catch (e) {
-            console.error('❌ Failed to parse project bin result:', e);
             resolve({ success: false, files: [] });
           }
         });
       });
       
       if (projectBinResult.success && projectBinResult.files) {
-        console.log('🎯 Project bin files found:', projectBinResult.files.length);
-        console.log('📋 Project bin files:', projectBinResult.files);
-        
         // Convert project bin files to our format
         const projectFiles = projectBinResult.files.map((file: any) => ({
           filename: file.filename,
@@ -860,9 +715,6 @@ export const App = () => {
         }));
         
         allFiles.push(...projectFiles);
-        console.log('✅ Added', projectFiles.length, 'project bin files to search');
-      } else {
-        console.warn('⚠️ No project bin files found or scan failed:', projectBinResult.error);
       }
       
       // Remove duplicates (same filename) - prefer project bin files
@@ -872,33 +724,17 @@ export const App = () => {
           acc.push(current);
         } else if (current.source === 'project_bin' && acc[existingIndex].source === 'filesystem') {
           // Replace filesystem file with project bin file (project bins take priority)
-          console.log(`🔄 Replacing filesystem file with project bin file: ${current.filename}`);
-          console.log(`   Filesystem path: ${acc[existingIndex].path}`);
-          console.log(`   Project bin path: ${current.binPath}`);
           acc[existingIndex] = current;
-        } else {
-          console.log(`⚠️ Skipping duplicate: ${current.filename} (keeping ${acc[existingIndex].source} version)`);
         }
         // If both are filesystem files with same name, skip duplicate
         return acc;
       }, []);
       
-      console.log('📋 Files after deduplication:', uniqueFiles.map(f => ({ filename: f.filename, path: f.path, prompt: f.prompt, display: formatFileDisplayName(f.filename) })));
-      
-      // Detailed file breakdown for debugging
-      uniqueFiles.forEach((file, index) => {
-        console.log(`📄 File ${index + 1}: "${file.filename}"`);
-        console.log(`   💬 Prompt: "${file.prompt}"`);
-        console.log(`   🏷️ Display: "${formatFileDisplayName(file.filename)}"`);
-        console.log(`   📁 Path: ${file.path}`);
-        console.log('   ---');
-      });
       
       // Sort by timestamp (most recent first)
       return uniqueFiles.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
       
     } catch (error) {
-      console.error('Error scanning SFX files:', error);
       return [];
     }
   };
@@ -910,22 +746,12 @@ export const App = () => {
       file.prompt.includes(cleanPrompt) || cleanPrompt.includes(file.prompt)
     );
     
-    console.log(`🔢 Finding next number for "${cleanPrompt}":`, {
-      totalFiles: existingFiles.length,
-      matchingFiles: matchingFiles.length,
-      existingNumbers: matchingFiles.map(f => ({ name: f.filename, number: f.number }))
-    });
-    
     if (matchingFiles.length === 0) {
-      console.log(`✨ First file for "${cleanPrompt}" - using number 001`);
       return 1;
     }
     
     const maxNumber = Math.max(...matchingFiles.map(file => file.number || 0));
-    const nextNumber = maxNumber + 1;
-    console.log(`📈 Next number for "${cleanPrompt}": ${nextNumber.toString().padStart(3, '0')}`);
-    
-    return nextNumber;
+    return maxNumber + 1;
   };
 
   // Save audio file with intelligent numbering
@@ -949,7 +775,6 @@ export const App = () => {
     const fileName = `${cleanPrompt} ${nextNumber}.mp3`;
     const filePath = `${sfxPath}/${fileName}`;
     
-    console.log(`💾 Saving new SFX with numbered suffix: "${fileName}" (number: ${nextNumber})`);
     
     const buffer = Buffer.from(audioData);
     fs.writeFileSync(filePath, buffer);
@@ -959,7 +784,7 @@ export const App = () => {
 
   // Handle text input changes
   const handlePromptChange = useCallback((value: string) => {
-    console.log('📝 Input changed to:', value); // Debug log
+    console.log('📝 Input changed to:', `"${value}"`, 'length:', value.length, 'isLookupMode:', state.isLookupMode); // Debug log
     
     if (state.isLookupMode) {
       // Already in lookup mode - handle filtering and searching
@@ -979,26 +804,36 @@ export const App = () => {
         
         console.log(`🔍 Searching for: "${searchTerm}" in ${state.allSFXFileInfo.length} files`);
         
+        // Enhanced parsing: Check if search term ends with a number (e.g., "explosion 3")
+        const searchMatch = searchTerm.match(/^(.+?)\s+(\d+)$/);
+        const hasPromptAndNumber = searchMatch !== null;
+        const searchPrompt = hasPromptAndNumber ? searchMatch[1].trim() : '';
+        const searchNumber = hasPromptAndNumber ? parseInt(searchMatch[2]) : 0;
+        
         // Filter existing files using the full file info
         const filteredFileInfo = state.allSFXFileInfo.filter(file => {
-          // Check if search term is a number (for numbered file retrieval)
-          const isNumberSearch = /^\d+$/.test(searchTerm);
+          // Check if search term is ONLY a number (for numbered file retrieval)
+          const isNumberOnlySearch = /^\d+$/.test(searchTerm);
           
-          if (isNumberSearch) {
+          if (hasPromptAndNumber) {
+            // Smart search: "explosion 3" finds exactly the 3rd explosion
+            const normalizedPrompt = file.prompt.toLowerCase().replace(/_/g, ' ');
+            const promptMatches = normalizedPrompt.includes(searchPrompt) || searchPrompt.includes(normalizedPrompt);
+            const numberMatches = file.number === searchNumber;
+            
+            const isMatch = promptMatches && numberMatches;
+            if (isMatch) {
+              console.log(`🎯 Smart match: "${file.filename}" for search "${searchTerm}" (prompt: "${file.prompt}", number: ${file.number})`);
+            }
+            return isMatch;
+          } else if (isNumberOnlySearch) {
             // Search by number suffix: if user types "1" or "12", match files ending with those numbers
-            const searchNumber = parseInt(searchTerm);
+            const searchNum = parseInt(searchTerm);
             const fileNumber = file.number || 0;
             
             // Match if the file number equals the search number, or if filename ends with " number.extension"
-            const numberMatch = fileNumber === searchNumber || 
-                               file.filename.endsWith(' ' + searchTerm + '.mp3') ||
-                               file.filename.endsWith(' ' + searchTerm + '.wav') ||
-                               file.filename.endsWith(' ' + searchTerm + '.aac') ||
-                               file.filename.endsWith(' ' + searchTerm + '.m4a') ||
-                               file.filename.endsWith(' ' + searchTerm + '.flac') ||
-                               file.filename.endsWith(' ' + searchTerm + '.ogg') ||
-                               file.filename.endsWith(' ' + searchTerm + '.aiff') ||
-                               file.filename.endsWith(' ' + searchTerm + '.aif');
+            const numberMatch = fileNumber === searchNum || 
+                               file.filename.match(new RegExp(`\\s${searchTerm}\\.[a-zA-Z0-9]+$`));
             
             if (numberMatch) {
               console.log(`🔢 Number match found: ${file.filename} (file number: ${fileNumber}, search: ${searchTerm})`);
@@ -1112,6 +947,8 @@ export const App = () => {
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    console.log('🎹 Key pressed:', e.key, 'Prompt:', `"${state.prompt}"`, 'isLookupMode:', state.isLookupMode);
+    
     // Handle spacebar press when prompt is empty to trigger lookup mode
     if (e.key === ' ' && state.prompt === '' && !state.isLookupMode) {
       console.log('🔍 Spacebar pressed - triggering lookup mode');
@@ -1200,11 +1037,14 @@ export const App = () => {
     }
     
     if (e.key === 'Enter' && !e.shiftKey) {
+      console.log('🚀 Enter pressed - isLookupMode:', state.isLookupMode, 'selectedIndex:', state.selectedDropdownIndex, 'filteredFiles:', state.filteredSFXFiles.length);
       e.preventDefault();
       if (state.isLookupMode && state.selectedDropdownIndex >= 0 && state.filteredSFXFiles.length > 0) {
         // Select currently highlighted result
+        console.log('📁 Selecting SFX file:', state.filteredSFXFiles[state.selectedDropdownIndex]);
         handleSFXFileSelect(state.filteredSFXFiles[state.selectedDropdownIndex]);
       } else {
+        console.log('🎵 Calling handleGenerate with prompt:', `"${state.prompt}"`);
         handleGenerate();
       }
     } else if (e.key === 'Escape') {
@@ -1232,12 +1072,33 @@ export const App = () => {
   // Load settings
   const loadSettings = useCallback(() => {
     try {
-      const savedApiKey = localStorage.getItem('elevenLabsApiKey') || '';
-      setState(prev => ({ ...prev, apiKey: savedApiKey }));
-      if (savedApiKey) {
+      let savedApiKey = localStorage.getItem('elevenLabsApiKey') || '';
+      
+      // Development fallback - use a test key if none is saved
+      if (!savedApiKey) {
+        savedApiKey = 'sk-test-key-for-development'; // You'll need to replace this with your actual key
+        localStorage.setItem('elevenLabsApiKey', savedApiKey);
+        console.log('🔧 Development: Auto-set test API key');
+      }
+      
+      const savedVolume = parseFloat(localStorage.getItem('sfxVolume') || '0');
+      const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') !== 'false';
+      const savedSelectedTrack = localStorage.getItem('selectedTrack') || 'A5*';
+      
+      setState(prev => ({ 
+        ...prev, 
+        apiKey: savedApiKey,
+        volume: savedVolume,
+        trackTargetingEnabled: savedTrackTargeting,
+        selectedTrack: savedSelectedTrack
+      }));
+      
+      console.log('⚙️ Settings loaded - API key:', savedApiKey ? 'Present' : 'Missing');
+      
+      if (savedApiKey && savedApiKey !== 'sk-test-key-for-development') {
         showStatus('Ready', 1000);
       } else {
-        showStatus('Set API key in settings', 3000);
+        showStatus('Set your real API key in settings', 3000);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -1261,21 +1122,89 @@ export const App = () => {
     }
   }, [showStatus]);
 
+  // Detect currently targeted track in Premiere Pro
+  const detectTargetedTrack = useCallback(async () => {
+    try {
+      const result = await (evalTS as any)("getHighestTargetedTrack");
+      
+      if (result.success && result.targetedTrack) {
+        setState(prev => ({ 
+          ...prev, 
+          detectedTargetedTrack: {
+            name: result.targetedTrack.name,
+            number: result.targetedTrack.number
+          }
+        }));
+        return result.targetedTrack;
+      } else {
+        setState(prev => ({ ...prev, detectedTargetedTrack: null }));
+        return null;
+      }
+    } catch (error) {
+      setState(prev => ({ ...prev, detectedTargetedTrack: null }));
+      return null;
+    }
+  }, []);
+
+  // Menu system management
+  const toggleSettings = useCallback(async () => {
+    const newMode = state.menuMode === 'normal' ? 'settings' : 'normal';
+    setState(prev => ({ 
+      ...prev, 
+      menuMode: newMode 
+    }));
+    
+    // When opening settings, detect the currently targeted track
+    if (newMode === 'settings' && state.trackTargetingEnabled) {
+      await detectTargetedTrack();
+    }
+  }, [state.menuMode, state.trackTargetingEnabled, detectTargetedTrack]);
+
+  const openMenu = useCallback((menuType: 'api' | 'help' | 'files') => {
+    setState(prev => ({ ...prev, menuMode: menuType }));
+  }, []);
+
+  const goBackToSettings = useCallback(() => {
+    setState(prev => ({ ...prev, menuMode: 'settings' }));
+  }, []);
+
+  // Track targeting system
+  const toggleTrackTargeting = useCallback(() => {
+    setState(prev => {
+      const newEnabled = !prev.trackTargetingEnabled;
+      const newTrack = newEnabled ? prev.selectedTrack : 'Auto';
+      
+      localStorage.setItem('trackTargetingEnabled', newEnabled.toString());
+      localStorage.setItem('selectedTrack', newTrack);
+      
+      return { 
+        ...prev, 
+        trackTargetingEnabled: newEnabled,
+        selectedTrack: newTrack
+      };
+    });
+  }, []);
+
+  const setSelectedTrack = useCallback((track: string) => {
+    localStorage.setItem('selectedTrack', track);
+    setState(prev => ({ ...prev, selectedTrack: track }));
+  }, []);
+
+  const setVolume = useCallback((volume: number) => {
+    setState(prev => ({ ...prev, volume }));
+    localStorage.setItem('sfxVolume', volume.toString());
+  }, []);
+
 
   // Initialize
   useEffect(() => {
     if (window.cep) {
       subscribeBackgroundColor(setBgColor);
       
-      // Test ExtendScript connection immediately
-      setTimeout(() => {
-        testExtendScriptConnection();
-      }, 1000);
       
       // Listen for real-time timeline changes with debouncing
       // Timeline monitoring is automatically initialized in ExtendScript
       listenTS("timelineChanged", (data) => {
-        console.log("Timeline changed event received:", data);
         
         // Debounce timeline updates to prevent excessive calls
         if (timelineUpdateRef.current) {
@@ -1288,54 +1217,10 @@ export const App = () => {
     }
     
     loadSettings();
-    // testConnection(); // Remove initial connection test to improve startup
     updateTimelineInfo();
     
-    // Add debug functions to global window for console access
-    (window as any).debugAISFX = async () => {
-      console.log('🧪 === AI SFX DEBUG SUITE ===');
-      
-      try {
-        // Test 1: Basic ExtendScript
-        console.log('1. Testing ExtendScript connection...');
-        const basicTest = await evalTS("getAppInfo");
-        console.log('   ✅ ExtendScript test:', basicTest);
-        
-        // Test 2: Timeline debug - use existing function
-        console.log('2. Testing timeline info...');
-        const timelineTest = await evalTS("getSequenceInfo");
-        console.log('   ✅ Timeline test:', timelineTest);
-        
-        // Test 3: Try simple import (if user provides path)
-        console.log('3. Use window.testAudioImport("/path/to/test.mp3") to test audio import');
-        
-        console.log('🧪 === DEBUG COMPLETE ===');
-        return { basicTest, timelineTest };
-        
-      } catch (error) {
-        console.error('❌ Debug failed:', error);
-        return { error: String(error) };
-      }
-    };
-    
-    (window as any).testAudioImport = async (filePath: string) => {
-      try {
-        console.log('🎵 Testing audio import for:', filePath);
-        const result = await evalTS("importAndPlaceAudio", filePath, 0);
-        console.log('🎵 Import result:', result);
-        return result;
-      } catch (error) {
-        console.error('❌ Import test failed:', error);
-        return { success: false, error: String(error) };
-      }
-    };
-    
-    console.log('🛠️ Debug functions available in console:');
-    console.log('   window.debugAISFX() - Run full debug suite');
-    console.log('   window.testAudioImport("/path/to/file.mp3") - Test audio import');
-    
     // Reduce polling frequency - rely more on events
-    const interval = setInterval(updateTimelineInfo, 10000); // Reduced from 5s to 10s
+    const interval = setInterval(updateTimelineInfo, 10000);
     
     return () => {
       clearInterval(interval);
@@ -1344,6 +1229,30 @@ export const App = () => {
       }
     };
   }, [loadSettings, updateTimelineInfo]);
+
+  // Real-time track targeting detection
+  useEffect(() => {
+    let trackTargetingInterval: NodeJS.Timeout | null = null;
+    
+    if (state.trackTargetingEnabled && state.menuMode === 'settings') {
+      console.log('🎯 Starting real-time track targeting detection...');
+      
+      // Initial detection
+      detectTargetedTrack();
+      
+      // Poll for changes every 2 seconds while settings are open
+      trackTargetingInterval = setInterval(() => {
+        detectTargetedTrack();
+      }, 2000);
+    }
+    
+    return () => {
+      if (trackTargetingInterval) {
+        console.log('🎯 Stopping track targeting detection');
+        clearInterval(trackTargetingInterval);
+      }
+    };
+  }, [state.trackTargetingEnabled, state.menuMode, detectTargetedTrack]);
 
   // Calculate timeline display values
   const getTimelineDisplay = () => {
@@ -1385,8 +1294,8 @@ export const App = () => {
           value={state.prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={state.isLookupMode ? "Search existing SFX..." : "Describe your SFX"}
-          disabled={state.isGenerating}
+          placeholder={state.isGenerating ? "Generating..." : (state.isLookupMode ? "Search existing SFX..." : "Describe your SFX")}
+          disabled={false}
           rows={1}
         />
         
@@ -1429,7 +1338,7 @@ export const App = () => {
         )}
         
         <div className="menu-buttons">
-          <button className="menu-btn" onClick={openSettings} title="Settings">⚙️</button>
+          <button className="menu-btn" onClick={toggleSettings} title="Settings">⚙️</button>
         </div>
       </div>
 
@@ -1508,53 +1417,137 @@ export const App = () => {
       </div>
 
 
-      {/* Settings Overlay - positioned over text input */}
-      {state.showSettings && (
-        <div className="settings-overlay-input" onClick={closeSettings}>
-          <div className="settings-dropdown-overlay">
-            <div className="settings-row">
-              <button className="settings-btn" onClick={(e) => {
-                e.stopPropagation();
-                const newApiKey = prompt('Enter your Eleven Labs API Key:', state.apiKey);
-                if (newApiKey !== null) saveApiKey(newApiKey);
-                closeSettings();
-              }} title="Configure API Key">
-                🔑
+      {/* Menu System - replaces bottom row based on state */}
+      {state.menuMode === 'settings' && (
+        <div className="menu-overlay">
+          <div className="settings-bar">
+            <div className="volume-control">
+              <span>Vol:</span>
+              <input
+                type="range"
+                min="-12"
+                max="6"
+                step="1"
+                value={state.volume}
+                onChange={(e) => setVolume(parseInt(e.target.value))}
+                className="volume-slider"
+              />
+              <span>{state.volume === 0 ? '0dB' : `${state.volume > 0 ? '+' : ''}${state.volume}dB`}</span>
+            </div>
+            
+            <div className="track-control">
+              <span>Target:</span>
+              <button 
+                className={`track-toggle ${state.trackTargetingEnabled ? 'enabled' : 'disabled'}`}
+                onClick={toggleTrackTargeting}
+                title={state.trackTargetingEnabled ? 'Turn off track targeting' : 'Turn on track targeting'}
+              >
+                {state.trackTargetingEnabled ? '●' : '○'}
               </button>
-              
-              <button className="settings-btn" onClick={(e) => {
-                e.stopPropagation();
+              <span className="track-display">
+                {state.trackTargetingEnabled 
+                  ? (state.detectedTargetedTrack 
+                      ? `${state.detectedTargetedTrack.name}*` 
+                      : 'No track targeted')
+                  : 'Auto'
+                }
+              </span>
+              {state.trackTargetingEnabled && (
+                <button 
+                  onClick={detectTargetedTrack}
+                  className="refresh-btn"
+                  title="Refresh targeted track detection"
+                >
+                  🔄
+                </button>
+              )}
+            </div>
+            
+            <div className="api-status">
+              <span>API:</span>
+              <span className={`status-indicator ${state.apiKey ? 'connected' : 'disconnected'}`}>
+                {state.apiKey ? '●' : '○'}
+              </span>
+            </div>
+            
+            <div className="menu-buttons">
+              <button className="menu-btn" onClick={() => openMenu('api')} title="API Setup">🔧</button>
+              <button className="menu-btn" onClick={() => openMenu('help')} title="Help">❓</button>
+              <button className="menu-btn" onClick={() => openMenu('files')} title="Files">📁</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* API Setup Menu */}
+      {state.menuMode === 'api' && (
+        <div className="menu-overlay">
+          <div className="api-menu">
+            <div className="menu-row-1">
+              <span>API Key:</span>
+              <input
+                type="password"
+                placeholder="ElevenLabs API Key"
+                value={state.apiKey}
+                onChange={(e) => setState(prev => ({ ...prev, apiKey: e.target.value }))}
+                className="api-input"
+              />
+              <button onClick={() => saveApiKey(state.apiKey)} className="test-btn">Test</button>
+              <button onClick={goBackToSettings} className="back-btn">Back</button>
+            </div>
+            <div className="menu-row-2">
+              <span className={`api-status ${state.apiKey ? 'connected' : 'disconnected'}`}>
+                {state.apiKey ? '✅ Connected' : '○ No Key'}
+              </span>
+              <span className="usage">Usage: --/1000</span>
+              <span className="folder">Folder: /SFX/</span>
+              <button onClick={() => {
                 const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
                 const sfxPath = `${userPath}/Desktop/SFX AI`;
                 window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
-                closeSettings();
-              }} title="Open Storage Folder">
-                📁
-              </button>
-              
-              <button className="settings-btn" onClick={(e) => {
-                e.stopPropagation();
-                window.open('https://elevenlabs.io/docs/api-reference', '_blank');
-                closeSettings();
-              }} title="API Documentation">
-                📚
-              </button>
-              
-              <button className="settings-btn" onClick={(e) => {
-                e.stopPropagation();
-                window.open('https://github.com/your-repo/issues', '_blank');
-                closeSettings();
-              }} title="Report Bugs">
-                🐛
-              </button>
-              
-              <button className="settings-btn" onClick={(e) => {
-                e.stopPropagation();
-                alert(`AI SFX Generator v2.0.0\n\nBuilt with Bolt CEP\nPowered by Eleven Labs\n\n© 2025 AI SFX`);
-                closeSettings();
-              }} title="About Plugin">
-                ℹ️
-              </button>
+              }} className="folder-btn">📁</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Help Menu */}
+      {state.menuMode === 'help' && (
+        <div className="menu-overlay">
+          <div className="help-menu">
+            <div className="menu-row-1">
+              <span>Quick Help</span>
+              <button onClick={goBackToSettings} className="back-btn">Back</button>
+            </div>
+            <div className="menu-row-2">
+              <span>Type description → Enter → SFX generated</span>
+              <button onClick={() => window.open('mailto:support@aisfx.com', '_blank')} className="email-btn">Email</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Files Menu */}
+      {state.menuMode === 'files' && (
+        <div className="menu-overlay">
+          <div className="files-menu">
+            <div className="menu-row-1">
+              <span>SFX Library: {state.allSFXFileInfo.length} files</span>
+              <button onClick={goBackToSettings} className="back-btn">Back</button>
+            </div>
+            <div className="menu-row-2">
+              <span>Location: /Desktop/SFX AI/</span>
+              <button onClick={() => {
+                const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
+                const sfxPath = `${userPath}/Desktop/SFX AI`;
+                window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+              }} className="change-btn">Change</button>
+              <button onClick={() => {
+                const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
+                const sfxPath = `${userPath}/Desktop/SFX AI`;
+                window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+              }} className="open-btn">Open</button>
+              <button onClick={() => showStatus('Clean functionality coming soon', 2000)} className="clean-btn">Clean</button>
             </div>
           </div>
         </div>

@@ -53,6 +53,7 @@ export interface PlacementResult {
   trackIndex?: number;
   position?: number;
   positionFormatted?: string;
+  clipVerified?: boolean;
   debug?: {
     sequenceName?: string;
     placementTimeSeconds?: number;
@@ -125,6 +126,32 @@ export interface DebugTimelineResult {
     audioTrackCount: number;
     sequenceName: string | null;
     qeAvailable: boolean;
+  };
+}
+
+/**
+ * @description Targeted track detection result
+ */
+export interface TargetedTrackResult {
+  success: boolean;
+  error?: string;
+  targetedTrack: {
+    index: number;
+    number: number;
+    name: string;
+    displayName: string;
+  } | null;
+  allTargetedTracks: Array<{
+    index: number;
+    number: number;
+    name: string;
+    displayName: string;
+  }>;
+  totalAudioTracks?: number;
+  debug?: {
+    sequenceName: string;
+    audioTrackCount: number;
+    targetedCount: number;
   };
 }
 

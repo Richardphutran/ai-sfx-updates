@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ExtensionList>
-    <Extension Id="com.ai.sfx.generator">
-        <HostList>
-            <Host Name="PPRO" Port="9230"/>
-        </HostList>
-    </Extension>
-</ExtensionList>

@@ -1,0 +1,64 @@
+{
+  "hash": "dc8d19b3",
+  "configHash": "c0c33728",
+  "lockfileHash": "e3b0c442",
+  "browserHash": "1fc2748a",
+  "optimized": {
+    "buffer": {
+      "src": "../../AI-SFX-Bolt/node_modules/buffer/index.js",
+      "file": "buffer.js",
+      "fileHash": "12f90484",
+      "needsInterop": true
+    },
+    "events": {
+      "src": "../../AI-SFX-Bolt/node_modules/events/events.js",
+      "file": "events.js",
+      "fileHash": "fbdc5f28",
+      "needsInterop": true
+    },
+    "path": {
+      "src": "../../AI-SFX-Bolt/node_modules/path/path.js",
+      "file": "path.js",
+      "fileHash": "f2db01bf",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../AI-SFX-Bolt/node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "2f3c984e",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../AI-SFX-Bolt/node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "413fece2",
+      "needsInterop": true
+    },
+    "string_decoder": {
+      "src": "../../AI-SFX-Bolt/node_modules/string_decoder/lib/string_decoder.js",
+      "file": "string_decoder.js",
+      "fileHash": "a9c7fcc2",
+      "needsInterop": true
+    },
+    "util": {
+      "src": "../../AI-SFX-Bolt/node_modules/util/util.js",
+      "file": "util.js",
+      "fileHash": "a15da1dc",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "chunk-YYF72VFW": {
+      "file": "chunk-YYF72VFW.js"
+    },
+    "chunk-4TAAM2TP": {
+      "file": "chunk-4TAAM2TP.js"
+    },
+    "chunk-KPHSR4TN": {
+      "file": "chunk-KPHSR4TN.js"
+    },
+    "chunk-BUSYA2B4": {
+      "file": "chunk-BUSYA2B4.js"
+    }
+  }
+}

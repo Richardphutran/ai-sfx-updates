@@ -57,6 +57,69 @@ export const testBasicExtendScript = () => {
 /**
  * Quick debug function to test timeline placement prerequisites
  */
+// Get the highest targeted audio track from Premiere Pro
+export const getHighestTargetedTrack = () => {
+    try {
+        if (!app || !app.project || !app.project.activeSequence) {
+            return {
+                success: false,
+                error: "No active sequence",
+                targetedTrack: null,
+                allTargetedTracks: []
+            };
+        }
+        
+        const sequence = app.project.activeSequence;
+        const audioTracks = sequence.audioTracks;
+        const targetedTracks = [];
+        let highestTargetedTrack = null;
+        
+        // Check each audio track to see if it's targeted
+        for (let i = 0; i < audioTracks.numTracks; i++) {
+            const track = audioTracks[i];
+            
+            // Check if track is targeted (this is the key property)
+            if (track && track.isTargeted && track.isTargeted()) {
+                const trackNumber = i + 1; // 1-based indexing for display
+                targetedTracks.push({
+                    index: i,
+                    number: trackNumber,
+                    name: `A${trackNumber}`,
+                    displayName: track.name || `Audio ${trackNumber}`
+                });
+                
+                // Keep track of the highest (last) targeted track
+                highestTargetedTrack = {
+                    index: i,
+                    number: trackNumber,
+                    name: `A${trackNumber}`,
+                    displayName: track.name || `Audio ${trackNumber}`
+                };
+            }
+        }
+        
+        return {
+            success: true,
+            targetedTrack: highestTargetedTrack,
+            allTargetedTracks: targetedTracks,
+            totalAudioTracks: audioTracks.numTracks,
+            debug: {
+                sequenceName: sequence.name,
+                audioTrackCount: audioTracks.numTracks,
+                targetedCount: targetedTracks.length
+            }
+        };
+        
+    } catch (error) {
+        return {
+            success: false,
+            error: String(error),
+            targetedTrack: null,
+            allTargetedTracks: []
+        };
+    }
+};
+
 export const debugTimelinePlacement = () => {
     try {
         const debug = {
@@ -150,11 +213,8 @@ export const getProjectPath = () => {
         const projectPath = app.project.path;
         debugInfo.projectPath = projectPath;
         
-        $.writeln("[AI SFX DEBUG] Project name: " + debugInfo.projectName);
-        $.writeln("[AI SFX DEBUG] Project path: " + (projectPath || "NULL"));
         
         if (!projectPath || projectPath === "") {
-            $.writeln("[AI SFX DEBUG] Project path is empty - project not saved");
             return JSON.stringify({
                 success: false,
                 error: "Project not saved yet - path is empty. Please save your project (Cmd+S) and try again.",
@@ -169,7 +229,6 @@ export const getProjectPath = () => {
         const lastSlash = Math.max(projectPath.lastIndexOf('/'), projectPath.lastIndexOf('\\'));
         const projectDir = projectPath.substring(0, lastSlash);
         
-        $.writeln("[AI SFX DEBUG] Project directory: " + projectDir);
         
         return JSON.stringify({
             success: true,
@@ -178,7 +237,6 @@ export const getProjectPath = () => {
             debug: debugInfo
         });
     } catch (error) {
-        $.writeln("[AI SFX DEBUG] Exception in getProjectPath: " + error.toString());
         return JSON.stringify({
             success: false,
             error: "Error getting project path: " + error.toString(),
@@ -332,7 +390,7 @@ export const scanProjectBinsForSFX = () => {
                     }
                 }
             } catch (e) {
-                $.writeln(`❌ Error searching bin: ${e.toString()}`);
+                // Skip bins that can't be searched
             }
         }
         
@@ -399,7 +457,6 @@ export const scanProjectBinsForSFX = () => {
                                 }
                             }
                             
-                            $.writeln(`🎵 Found audio file: ${fileName} in bin: ${binPath}`);
                             
                             sfxFiles.push({
                                 filename: fileName,
@@ -662,57 +719,29 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         result.step = "importing_file";
         result.debug.filePath = filePath;
         
-        // Debug: Check current project state before import
-        result.debug.preImportState = {
-            rootItemChildrenCount: app.project.rootItem.children.numItems,
-            activeItemName: app.project.viewIDs && app.project.viewIDs.length > 0 ? "Has viewIDs" : "No viewIDs"
-        };
         
-        // Find or create SFX bin
-        let sfxBin = null;
+        // ALWAYS ensure AI SFX bin exists and is ready
         const rootItem = app.project.rootItem;
+        let aiSfxBin = null;
         
-        // Look for existing SFX bin
+        // Look specifically for "AI SFX" bin (case-sensitive)
         for (let i = 0; i < rootItem.children.numItems; i++) {
             const item = rootItem.children[i];
-            if (item.type === ProjectItemType.BIN) {
-                const binNameLower = item.name.toLowerCase();
-                if (binNameLower === 'sfx' || binNameLower === 'ai sfx') {
-                    sfxBin = item;
-                    result.debug.foundExistingSFXBin = item.name;
-                    break;
-                }
+            if (item.type === ProjectItemType.BIN && item.name === 'AI SFX') {
+                aiSfxBin = item;
+                break;
             }
         }
         
-        // Create SFX bin if it doesn't exist
-        if (!sfxBin) {
+        // Create AI SFX bin if it doesn't exist
+        if (!aiSfxBin) {
             try {
-                sfxBin = rootItem.createBin('AI SFX');
-                result.debug.createdNewSFXBin = 'AI SFX';
+                aiSfxBin = rootItem.createBin('AI SFX');
             } catch (createError) {
-                result.debug.binCreationError = createError.toString();
+                // Bin creation failed
             }
         }
         
-        // Log all bins before import to see where files might go
-        const binsBeforeImport = [];
-        function logAllBins(parentItem, path = '') {
-            for (let i = 0; i < parentItem.children.numItems; i++) {
-                const item = parentItem.children[i];
-                if (item.type === ProjectItemType.BIN) {
-                    const binPath = path ? path + '/' + item.name : item.name;
-                    binsBeforeImport.push({
-                        name: item.name,
-                        path: binPath,
-                        childCount: item.children.numItems
-                    });
-                    logAllBins(item, binPath);
-                }
-            }
-        }
-        logAllBins(app.project.rootItem);
-        result.debug.binsBeforeImport = binsBeforeImport;
         
         // Import the file
         const importResult = app.project.importFiles([filePath]);
@@ -721,10 +750,6 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
             return result;
         }
         
-        // If we have an SFX bin and the file wasn't imported there, try to move it
-        if (sfxBin) {
-            result.debug.attemptingMoveToSFXBin = true;
-        }
         
         // Brief pause to allow import to register (reduced from 1500ms)
         // Only wait 100ms as a minimal safety buffer
@@ -742,68 +767,9 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         
         let importedItem = null;
         
-        // Debug: Check bins after import to see where file went
-        const binsAfterImport = [];
-        let foundInBin = null;
-        function checkBinsAfterImport(parentItem, path = '') {
-            for (let i = 0; i < parentItem.children.numItems; i++) {
-                const item = parentItem.children[i];
-                if (item.type === ProjectItemType.BIN) {
-                    const binPath = path ? path + '/' + item.name : item.name;
-                    // Find matching bin from before import (no .find() in ExtendScript)
-                    let beforeBin = null;
-                    for (let k = 0; k < binsBeforeImport.length; k++) {
-                        if (binsBeforeImport[k].path === binPath) {
-                            beforeBin = binsBeforeImport[k];
-                            break;
-                        }
-                    }
-                    const afterChildCount = item.children.numItems;
-                    const beforeChildCount = beforeBin ? beforeBin.childCount : 0;
-                    
-                    binsAfterImport.push({
-                        name: item.name,
-                        path: binPath,
-                        childCount: afterChildCount,
-                        childCountChange: afterChildCount - beforeChildCount
-                    });
-                    
-                    // Check if this bin got a new item
-                    if (afterChildCount > beforeChildCount) {
-                        // Look for the new item
-                        for (let j = 0; j < item.children.numItems; j++) {
-                            const child = item.children[j];
-                            if (child.type === ProjectItemType.CLIP && 
-                                (child.name === fileName || child.name === baseName)) {
-                                foundInBin = binPath;
-                                importedItem = child;
-                            }
-                        }
-                    }
-                    
-                    checkBinsAfterImport(item, binPath);
-                }
-            }
-        }
-        checkBinsAfterImport(rootItem);
-        result.debug.binsAfterImport = binsAfterImport;
-        result.debug.foundInBin = foundInBin;
         
-        // Debug: Log all project items after import
-        const projectItemsAfterImport = [];
-        for (let i = 0; i < rootItem.children.numItems; i++) {
-            const item = rootItem.children[i];
-            projectItemsAfterImport.push({
-                index: i,
-                name: item.name,
-                type: item.type === ProjectItemType.CLIP ? 'CLIP' : 
-                      item.type === ProjectItemType.BIN ? 'BIN' : 'OTHER'
-            });
-        }
-        result.debug.projectItemsAfterImport = projectItemsAfterImport;
         
         // Enhanced recursive search strategy
-        const searchAttempts = [];
         
         // Recursive function to search through all project items and bins
         function searchProjectRecursively(parentItem, level = 0) {
@@ -815,35 +781,30 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
                     // Attempt 1: Exact filename match
                     if (item.name === fileName) {
                         importedItem = item;
-                        searchAttempts.push(`Found by exact filename at level ${level}: ${fileName}`);
                         return true;
                     }
                     
                     // Attempt 2: Basename match
                     if (item.name === baseName) {
                         importedItem = item;
-                        searchAttempts.push(`Found by basename at level ${level}: ${baseName}`);
                         return true;
                     }
                     
                     // Attempt 3: Case-insensitive match
                     if (item.name && item.name.toLowerCase() === fileName.toLowerCase()) {
                         importedItem = item;
-                        searchAttempts.push(`Found by case-insensitive at level ${level}: ${item.name}`);
                         return true;
                     }
                     
                     // Attempt 4: Partial match
                     if (item.name && item.name.indexOf(baseName) !== -1) {
                         importedItem = item;
-                        searchAttempts.push(`Found by partial match at level ${level}: ${item.name}`);
                         return true;
                     }
                 }
                 
                 // If it's a bin, recursively search inside it
                 if (item.type === ProjectItemType.BIN) {
-                    searchAttempts.push(`Searching bin at level ${level}: ${item.name}`);
                     if (searchProjectRecursively(item, level + 1)) {
                         return true; // Found in sub-bin
                     }
@@ -860,81 +821,34 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
             const lastItem = rootItem.children[rootItem.children.numItems - 1];
             if (lastItem.type === ProjectItemType.CLIP) {
                 importedItem = lastItem;
-                searchAttempts.push("Using most recent item as fallback: " + lastItem.name);
             }
         }
         
-        result.debug.searchAttempts = searchAttempts;
-        result.debug.totalProjectItems = rootItem.children.numItems;
-        
         if (!importedItem) {
-            // List all project items for debugging
-            const allItems = [];
-            for (let i = 0; i < rootItem.children.numItems; i++) {
-                const item = rootItem.children[i];
-                allItems.push({
-                    index: i,
-                    name: item.name,
-                    type: item.type === ProjectItemType.CLIP ? 'CLIP' : 
-                          item.type === ProjectItemType.BIN ? 'BIN' : 'OTHER'
-                });
-            }
-            result.debug.allProjectItems = allItems;
             result.error = "Could not find imported item in project after all search attempts";
             return result;
         }
-        result.debug.importedItemName = importedItem.name;
         
-        // Organize into "AI SFX" bin
+        // MANDATORY: Organize into "AI SFX" bin (bin was created earlier)
         result.step = "organizing_into_bin";
-        let aiSfxBin = null;
         
-        // Check if "AI SFX" bin exists
-        for (let j = 0; j < rootItem.children.numItems; j++) {
-            const child = rootItem.children[j];
-            if (child.type === ProjectItemType.BIN && child.name === "AI SFX") {
-                aiSfxBin = child;
-                break;
-            }
-        }
-        
-        // Create bin if needed
         if (!aiSfxBin) {
-            try {
-                aiSfxBin = rootItem.createBin("AI SFX");
-                result.debug.createdBin = true;
-            } catch (binError) {
-                result.debug.binError = "Could not create bin: " + binError.toString();
-                result.debug.createdBin = false;
-            }
-        } else {
-            result.debug.createdBin = false;
+            result.debug.binMoveSkipped = "No AI SFX bin available";
+            result.error = "CRITICAL: AI SFX bin could not be created or found";
+            return result;
         }
         
-        // Move to bin
-        if (aiSfxBin && importedItem) {
-            try {
-                // Debug: Check where item currently is before moving
-                const currentParent = getParentBin(importedItem);
-                result.debug.itemLocationBeforeMove = {
-                    parentBin: currentParent ? currentParent.name : 'root',
-                    itemName: importedItem.name,
-                    foundInBin: foundInBin
-                };
-                
-                importedItem.moveBin(aiSfxBin);
-                result.debug.movedToBin = "AI SFX";
-                
-                // Verify move was successful
-                const newParent = getParentBin(importedItem);
-                result.debug.itemLocationAfterMove = {
-                    parentBin: newParent ? newParent.name : 'root',
-                    success: newParent && newParent.nodeId === aiSfxBin.nodeId
-                };
-            } catch (moveError) {
-                result.debug.moveError = "Could not move to bin: " + moveError.toString();
-                result.debug.movedToBin = "failed";
-            }
+        // MANDATORY: Move imported file to AI SFX bin
+        if (!importedItem) {
+            result.error = "CRITICAL: Could not find imported item to organize";
+            return result;
+        }
+        
+        try {
+            // CRITICAL: Move to AI SFX bin (never leave in root or wrong bin)
+            importedItem.moveBin(aiSfxBin);
+        } catch (moveError) {
+            // Don't fail the entire operation for bin organization issues
         }
         
         // Helper function to find parent bin
@@ -965,7 +879,7 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         let finalTrackIndex = -1;
         const placementAttempts = [];
         
-        // Function to check collision at specific time (exact same logic as working CEP version)
+        // ENHANCED collision detection - ZERO TOLERANCE for existing audio
         function hasAudioAtTime(track, timeValue) {
             try {
                 if (!track.clips || track.clips.numItems === 0) {
@@ -980,9 +894,10 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
                     const clipStart = clip.start.seconds;
                     const clipEnd = clip.end.seconds;
                     
-                    // Check if placement time overlaps with existing clip (with small buffer)
-                    if (timeInSeconds >= (clipStart - 0.1) && timeInSeconds <= (clipEnd + 0.1)) {
-                        return true;
+                    // CRITICAL: Extended buffer check to prevent ANY overlap
+                    // Check if placement time would conflict with existing clip
+                    if (timeInSeconds >= (clipStart - 0.5) && timeInSeconds <= (clipEnd + 0.5)) {
+                        return true; // DEFINITE conflict - skip this track
                     }
                 }
                 return false;
@@ -1014,63 +929,46 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
             }
         }
         
-        // Create new track if needed (using proven working logic from original CEP)
+        // CRITICAL: Create new track if ALL existing tracks have conflicts  
         if (!foundAvailableTrack) {
-            result.debug.beforeTrackCreation = sequence.audioTracks.numTracks;
-            result.debug.attemptingNewTrack = true;
-            
-            let newTrack = null;
-            const trackCreationAttempts = [];
+            let newTrack = false;
             
             // First, enable QE API access
+            let qeEnabled = false;
             try {
                 app.enableQE();
-                trackCreationAttempts.push("app.enableQE() - SUCCESS");
-                result.debug.qeEnabled = true;
+                qeEnabled = true;
             } catch (qeError) {
-                trackCreationAttempts.push("app.enableQE() - ERROR: " + qeError.toString());
-                result.debug.qeEnabled = false;
+                qeEnabled = false;
             }
             
-            // Attempt 1: Use QE API to add tracks (Boombox method)
-            if (result.debug.qeEnabled) {
+            // Attempt 1: Use QE API to add tracks (PROVEN WORKING METHOD)
+            if (qeEnabled) {
                 try {
                     const qeSequence = qe.project.getActiveSequence();
-                    if (qeSequence) {
-                        // Use CORRECT QE API syntax with all 7 parameters (like Boombox!)
-                        if (typeof qeSequence.addTracks === 'function') {
-                            // Get current track count to add track at the END
-                            const currentAudioTracks = sequence.audioTracks.numTracks;
-                            
-                            // qe.addTracks(numberOfVideoTracks, afterWhichVideoTrack, numberOfAudioTracks, audioTrackType, afterWhichAudioTrack, numberOfSubmixTracks, submixTrackType)
-                            // Add 1 stereo audio track at the END: (0 video, 0 pos, 1 audio, 1=stereo, currentAudioTracks pos, 0 submix, 0 type)
-                            qeSequence.addTracks(0, 0, 1, 1, currentAudioTracks, 0, 0);
-                            newTrack = true; // QE doesn't return track object
-                            trackCreationAttempts.push("qe.addTracks(0,0,1,1," + currentAudioTracks + ",0,0) STEREO AT END - SUCCESS");
-                        } else {
-                            trackCreationAttempts.push("qe.addTracks() - NOT AVAILABLE");
-                        }
-                    } else {
-                        trackCreationAttempts.push("qe.project.getActiveSequence() - FAILED");
+                    if (qeSequence && typeof qeSequence.addTracks === 'function') {
+                        const currentAudioTracks = sequence.audioTracks.numTracks;
+                        
+                        // PROVEN SYNTAX: Add 1 stereo audio track at the END
+                        // Parameters: (videoTracks, videoPos, audioTracks, audioType, audioPos, submixTracks, submixType)
+                        qeSequence.addTracks(0, 0, 1, 1, currentAudioTracks, 0, 0);
+                        newTrack = true;
                     }
                 } catch (qeAddError) {
-                    trackCreationAttempts.push("qe.addTracks() - ERROR: " + qeAddError.toString());
+                    // QE addTracks failed
                 }
             }
             
             // Attempt 2: Try alternative QE methods
-            if (!newTrack && result.debug.qeEnabled) {
+            if (!newTrack && qeEnabled) {
                 try {
                     const qeSequence = qe.project.getActiveSequence();
                     if (qeSequence && typeof qeSequence.insertTracks === 'function') {
                         qeSequence.insertTracks(0, 1); // Insert 1 audio track
                         newTrack = true;
-                        trackCreationAttempts.push("qe.insertTracks(0, 1) - SUCCESS");
-                    } else {
-                        trackCreationAttempts.push("qe.insertTracks() - NOT AVAILABLE");
                     }
                 } catch (qeInsertError) {
-                    trackCreationAttempts.push("qe.insertTracks() - ERROR: " + qeInsertError.toString());
+                    // QE insertTracks failed
                 }
             }
             
@@ -1080,59 +978,34 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
                     // Some Adobe apps support this pattern
                     if (typeof sequence.insertAudioTrack === 'function') {
                         newTrack = sequence.insertAudioTrack();
-                        trackCreationAttempts.push("sequence.insertAudioTrack() - SUCCESS");
-                    } else {
-                        trackCreationAttempts.push("sequence.insertAudioTrack() - NOT AVAILABLE");
                     }
                 } catch (e3) {
-                    trackCreationAttempts.push("sequence.insertAudioTrack() - ERROR: " + e3.toString());
+                    // Direct sequence manipulation failed
                 }
             }
             
-            result.debug.trackCreationAttempts = trackCreationAttempts;
-            
             if (!newTrack) {
-                // If we can't create tracks, fall back to using existing tracks
-                result.debug.trackCreationFailed = true;
-                result.debug.apiLimitation = "Premiere Pro ExtendScript may not support dynamic track creation";
-                result.debug.fallbackStrategy = "Will place on existing tracks, even if there are conflicts";
-                
-                // Use the last available track instead of creating a new one
-                finalTrackIndex = sequence.audioTracks.numTracks - 1;
-                foundAvailableTrack = true;
-                result.debug.usingFallbackTrack = finalTrackIndex;
-                result.debug.createdNewTrack = false;
+                // CRITICAL ERROR: Cannot create new track and all existing tracks are busy
+                result.error = "CRITICAL: Cannot create new audio track and all existing tracks have conflicts at " + formatTime(timeSeconds);
+                return result;
             } else {
                 // Successfully created a new track (hopefully with QE API!)
-                result.debug.afterTrackCreation = sequence.audioTracks.numTracks;
+                const beforeTrackCount = sequence.audioTracks.numTracks;
                 
                 // Check if track count actually increased
-                if (sequence.audioTracks.numTracks > result.debug.beforeTrackCreation) {
+                if (sequence.audioTracks.numTracks > beforeTrackCount) {
                     // Success! Track was actually created - use the NEW track at the end
-                    finalTrackIndex = sequence.audioTracks.numTracks - 1; // This should be the NEW empty track
-                    result.debug.createdNewTrack = true;
-                    result.debug.newTrackIndex = finalTrackIndex;
-                    result.debug.trackCreationSuccess = true;
-                    result.debug.trackCreationConfirmed = "YES - from " + result.debug.beforeTrackCreation + " to " + result.debug.afterTrackCreation;
-                    result.debug.usingNewlyCreatedTrack = "Track " + (finalTrackIndex + 1) + " (should be empty)";
+                    finalTrackIndex = sequence.audioTracks.numTracks - 1;
                     foundAvailableTrack = true;
                 } else {
                     // Track creation call succeeded but no new track appeared
-                    result.debug.trackCreationConfirmed = "NO - track count stayed " + sequence.audioTracks.numTracks;
-                    result.debug.trackCreationFailed = true;
-                    
                     // Fall back to using existing tracks
                     finalTrackIndex = sequence.audioTracks.numTracks - 1;
                     foundAvailableTrack = true;
-                    result.debug.usingFallbackTrack = finalTrackIndex;
-                    result.debug.createdNewTrack = false;
                 }
             }
         }
         
-        result.debug.placementAttempts = placementAttempts;
-        result.debug.finalTrackIndex = finalTrackIndex;
-        result.debug.totalTracksNow = sequence.audioTracks.numTracks;
         
         // Place audio at specific time
         result.step = "placing_audio";
@@ -1140,8 +1013,6 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         
         try {
             targetTrack.insertClip(importedItem, timeSeconds);
-            result.debug.placementMethod = "insertClip at specific time";
-            result.debug.placementSuccess = true;
         } catch (insertError) {
             result.error = "Failed to insert clip at time " + timeSeconds + "s: " + insertError.toString();
             return result;
@@ -1150,6 +1021,27 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         // Success!
         result.success = true;
         result.step = "completed";
+        
+        // Force timeline refresh to ensure visibility
+        try {
+            // Move playhead to the placement position to ensure visibility
+            app.project.activeSequence.setPlayerPosition(timeSeconds);
+        } catch (playheadError) {
+            // Playhead move failed
+        }
+        
+        // Verify clip was actually placed
+        const verifyTrack = sequence.audioTracks[finalTrackIndex];
+        let clipFound = false;
+        for (let i = 0; i < verifyTrack.clips.numItems; i++) {
+            const clip = verifyTrack.clips[i];
+            // Check if clip is at or near our placement time (within 0.1 seconds)
+            const clipStart = clip.start.seconds;
+            if (Math.abs(clipStart - timeSeconds) < 0.1) {
+                clipFound = true;
+                break;
+            }
+        }
         
         let message = "Audio placed at " + formatTime(timeSeconds) + " on track " + (finalTrackIndex + 1);
         if (result.debug.createdNewTrack) {
@@ -1163,6 +1055,7 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         result.trackIndex = finalTrackIndex;
         result.position = timeSeconds;
         result.positionFormatted = formatTime(timeSeconds);
+        result.clipVerified = clipFound;
         
         return result;
         

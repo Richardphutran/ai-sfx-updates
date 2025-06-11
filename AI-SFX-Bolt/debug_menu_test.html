@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI SFX Menu Debug</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        iframe {
+            width: 525px;
+            height: 130px;
+            border: 2px solid #444;
+            background: #2a2a2a;
+        }
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #2a2a2a;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h2>AI SFX Plugin Menu Test</h2>
+    <p>Testing menu system at 525x130px constraint:</p>
+    
+    <iframe src="http://localhost:3030/main/" id="plugin-frame"></iframe>
+    
+    <div class="info">
+        <h3>Debug Info:</h3>
+        <p>Plugin URL: <a href="http://localhost:3030/main/" target="_blank">http://localhost:3030/main/</a></p>
+        <p>Expected size: 525x130px</p>
+        <p>Click the ⚙️ button to see the new menu system</p>
+    </div>
+    
+    <script>
+        // Check if iframe loads
+        const iframe = document.getElementById('plugin-frame');
+        iframe.onload = () => {
+            console.log('Plugin iframe loaded successfully');
+        };
+        iframe.onerror = (e) => {
+            console.error('Plugin iframe failed to load:', e);
+        };
+    </script>
+</body>
+</html>

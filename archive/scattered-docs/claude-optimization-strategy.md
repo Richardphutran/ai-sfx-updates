@@ -1,1 +1,0 @@
-/Users/richardtran/Documents/Code/MultiPluginSystem-Central/automation-tools/claude-optimization-strategy.md

@@ -9,10 +9,17 @@ export function initAutoReconnect() {
     return;
   }
 
-  // Check if page failed to load
+  // Check if page failed to load - improved detection
   const checkPageError = () => {
-    const isErrorPage = document.title === 'Page failed to load' || 
-                       document.body?.innerHTML?.includes('ERR_CONNECTION_REFUSED');
+    // Only trigger if we're actually on an error page
+    const isErrorPage = (
+      document.title === 'Page failed to load' || 
+      document.body?.innerHTML?.includes('ERR_CONNECTION_REFUSED') ||
+      document.body?.innerHTML?.includes('Failed to fetch')
+    ) && 
+    // Prevent false positives on normal pages
+    !document.querySelector('[data-plugin="ai-sfx"]') &&
+    !document.querySelector('.plugin-container');
     
     if (isErrorPage) {
       handleConnectionError();
@@ -21,8 +28,6 @@ export function initAutoReconnect() {
 
   // Handle connection errors
   const handleConnectionError = () => {
-    console.log('🔄 Connection error detected, attempting to reconnect...');
-    
     const targetUrl = window.location.href;
     let attempts = 0;
     const maxAttempts = 120; // 2 minutes
@@ -33,16 +38,12 @@ export function initAutoReconnect() {
       // Try to fetch from dev server
       fetch(targetUrl.replace(/^http/, 'http'), { method: 'HEAD', mode: 'no-cors' })
         .then(() => {
-          console.log('✅ Dev server is now available!');
           setTimeout(() => {
             window.location.reload();
           }, 500);
         })
         .catch(() => {
           if (attempts < maxAttempts) {
-            if (attempts % 10 === 0) {
-              console.log(`⏳ Still waiting for dev server... (${attempts}s)`);
-            }
             setTimeout(tryConnect, 1000);
           } else {
             showManualInstructions();

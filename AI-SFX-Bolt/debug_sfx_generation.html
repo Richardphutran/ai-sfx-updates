@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug SFX Generation</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #fff;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 5px;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+        pre {
+            background: #2d2d2d;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #1976D2; }
+    </style>
+</head>
+<body>
+    <h1>🔍 AI SFX Generation Debugger</h1>
+    
+    <div class="section">
+        <h2>Quick Debug Commands</h2>
+        <p>Open Chrome DevTools at <a href="http://localhost:9230" target="_blank">http://localhost:9230</a> and run these commands:</p>
+        
+        <pre>
+// 1. Check if API key is set
+console.log('API Key exists:', !!localStorage.getItem('elevenLabsApiKey'));
+
+// 2. Check current state
+(() => {
+    const textarea = document.querySelector('.sfx-input');
+    const generateBtn = document.querySelector('.generate-btn');
+    console.log('Textarea found:', !!textarea);
+    console.log('Generate button found:', !!generateBtn);
+    console.log('Textarea disabled:', textarea?.disabled);
+    console.log('Current prompt:', textarea?.value);
+})();
+
+// 3. Test Enter key handling
+document.querySelector('.sfx-input').addEventListener('keydown', (e) => {
+    console.log('Key pressed:', e.key, 'Shift:', e.shiftKey);
+});
+
+// 4. Manually trigger generation
+(() => {
+    const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        shiftKey: false,
+        bubbles: true
+    });
+    document.querySelector('.sfx-input').dispatchEvent(event);
+})();
+
+// 5. Check for JavaScript errors
+window.addEventListener('error', (e) => {
+    console.error('JavaScript Error:', e.message, e.filename, e.lineno);
+});
+
+// 6. Monitor API calls
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+    console.log('API Call:', args[0], args[1]);
+    return originalFetch.apply(this, args).then(response => {
+        console.log('API Response:', response.status, response.statusText);
+        if (!response.ok) {
+            response.clone().text().then(text => console.error('API Error:', text));
+        }
+        return response;
+    });
+};
+
+// 7. Check if handleGenerate is accessible
+console.log('React DevTools available:', !!window.__REACT_DEVTOOLS_GLOBAL_HOOK__);
+        </pre>
+    </div>
+    
+    <div class="section">
+        <h2>Common Issues & Fixes</h2>
+        
+        <h3>1. API Key Not Set</h3>
+        <pre>
+// Set API key manually
+localStorage.setItem('elevenLabsApiKey', 'YOUR_API_KEY_HERE');
+location.reload();
+        </pre>
+        
+        <h3>2. Enter Key Not Working</h3>
+        <pre>
+// Check if textarea has focus
+document.querySelector('.sfx-input').focus();
+
+// Verify event listeners
+getEventListeners(document.querySelector('.sfx-input'));
+        </pre>
+        
+        <h3>3. Network/CORS Issues</h3>
+        <pre>
+// Test API directly
+fetch('https://api.elevenlabs.io/v1/models', {
+    headers: {
+        'xi-api-key': localStorage.getItem('elevenLabsApiKey')
+    }
+}).then(r => r.json()).then(console.log).catch(console.error);
+        </pre>
+        
+        <h3>4. React State Issues</h3>
+        <pre>
+// Find React component instance
+const getReactFiber = (dom) => {
+    const key = Object.keys(dom).find(key => key.startsWith('__reactFiber'));
+    return dom[key];
+};
+
+const textarea = document.querySelector('.sfx-input');
+const fiber = getReactFiber(textarea);
+console.log('React Fiber:', fiber);
+console.log('Props:', fiber?.memoizedProps);
+        </pre>
+    </div>
+    
+    <div class="section">
+        <h2>Step-by-Step Debug Process</h2>
+        <ol>
+            <li>Open <a href="http://localhost:9230" target="_blank">http://localhost:9230</a></li>
+            <li>Press F12 to open DevTools</li>
+            <li>Go to Console tab</li>
+            <li>Check for red error messages</li>
+            <li>Run the commands above one by one</li>
+            <li>Type a prompt in the textarea</li>
+            <li>Press Enter</li>
+            <li>Watch Console for any errors or logs</li>
+        </ol>
+    </div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-06-07T20:50:29.244072",
+  "plugin": "ai-sfx",
+  "port": 3005,
+  "issues_found": 0,
+  "files_fixed": 1,
+  "issues": [],
+  "fixed_files": [
+    "CEP:com.ai.sfx.generator"
+  ]
+}
