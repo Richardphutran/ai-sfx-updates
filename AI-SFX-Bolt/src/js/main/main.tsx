@@ -3,6 +3,7 @@ import { evalTS, subscribeBackgroundColor, listenTS, csi } from "../lib/utils/bo
 import CSInterface from "../lib/cep/csinterface";
 import { fs } from "../lib/cep/node";
 import type { TimelineInfo, PlacementResult } from "../../shared/universals";
+import { bridgeClient } from "../lib/bridge-client";
 import "./main.scss";
 
 interface SFXState {
@@ -33,6 +34,8 @@ interface SFXState {
   volume: number;
   // Auto-detected targeted track from Premiere
   detectedTargetedTrack: { name: string; number: number } | null;
+  // Custom SFX folder path
+  customSFXPath: string | null;
 }
 
 interface SFXFileInfo {
@@ -76,13 +79,98 @@ export const App = () => {
     selectedTrack: 'A5*',
     availableTracks: ['A1', 'A2', 'A3', 'A4', 'A5*', 'A6', 'A7'],
     volume: 0,
-    detectedTargetedTrack: null
+    detectedTargetedTrack: null,
+    customSFXPath: null
   });
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const timelineUpdateRef = useRef<NodeJS.Timeout>();
   const cachedFileInfoRef = useRef<SFXFileInfo[]>([]);
   const CACHE_DURATION = 30000; // 30 seconds cache
+
+  // Initialize bridge connection and console forwarding
+  useEffect(() => {
+    // Set up console forwarding to multi-plugin debugger
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    const originalConsoleInfo = console.info;
+    const originalConsoleDebug = console.debug;
+    
+    // Override console methods to forward to bridge
+    console.log = function(...args) {
+      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (bridgeClient.getStatus().connected) {
+        bridgeClient.sendConsoleMessage('log', message, args.length > 1 ? args.slice(1) : undefined);
+      }
+      originalConsoleLog.apply(console, args);
+    };
+    
+    console.error = function(...args) {
+      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (bridgeClient.getStatus().connected) {
+        bridgeClient.sendConsoleMessage('error', message, args.length > 1 ? args.slice(1) : undefined);
+      }
+      originalConsoleError.apply(console, args);
+    };
+    
+    console.warn = function(...args) {
+      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (bridgeClient.getStatus().connected) {
+        bridgeClient.sendConsoleMessage('warn', message, args.length > 1 ? args.slice(1) : undefined);
+      }
+      originalConsoleWarn.apply(console, args);
+    };
+    
+    console.info = function(...args) {
+      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (bridgeClient.getStatus().connected) {
+        bridgeClient.sendConsoleMessage('info', message, args.length > 1 ? args.slice(1) : undefined);
+      }
+      originalConsoleInfo.apply(console, args);
+    };
+    
+    console.debug = function(...args) {
+      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+      if (bridgeClient.getStatus().connected) {
+        bridgeClient.sendConsoleMessage('debug', message, args.length > 1 ? args.slice(1) : undefined);
+      }
+      originalConsoleDebug.apply(console, args);
+    };
+    
+    // Connect to bridge
+    bridgeClient.connect().then(connected => {
+      if (connected) {
+        console.log('✅ Bridge client connected successfully');
+        console.log('🔊 AI SFX plugin ready for multi-plugin debugging');
+        
+        // Set up event handlers
+        bridgeClient.on('sfx-response', (response) => {
+          console.log('🎵 SFX response received:', response);
+          // Handle SFX generation response
+        });
+        
+        bridgeClient.on('premiere-response', (response) => {
+          console.log('🎬 Premiere response received:', response);
+          // Handle Premiere action response
+        });
+        
+      } else {
+        console.warn('⚠️ Bridge client failed to connect');
+      }
+    });
+
+    return () => {
+      // Restore original console methods
+      console.log = originalConsoleLog;
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+      console.info = originalConsoleInfo;
+      console.debug = originalConsoleDebug;
+      
+      bridgeClient.disconnect();
+    };
+  }, []);
 
   // Prevent drag behavior
   useEffect(() => {
@@ -459,6 +547,11 @@ export const App = () => {
 
   // Get SFX folder path
   const getSFXPath = async (): Promise<string | null> => {
+    // First check for custom path
+    if (state.customSFXPath) {
+      return state.customSFXPath;
+    }
+    
     try {
       // Get project directory from ExtendScript
       const result = await new Promise<any>((resolve) => {
@@ -487,8 +580,9 @@ export const App = () => {
   };
 
   // Scan existing SFX files from both filesystem and project bins
-  const scanExistingSFXFiles = async (): Promise<SFXFileInfo[]> => {
+  const scanExistingSFXFiles = async (customPath?: string | null): Promise<SFXFileInfo[]> => {
     const allFiles: SFXFileInfo[] = [];
+    const pathToUse = customPath !== undefined ? customPath : state.customSFXPath;
     
     try {
       // 1. Scan both main SFX folder and ai sfx subfolder
@@ -524,17 +618,24 @@ export const App = () => {
       
       const foldersToScan: string[] = [];
       
+      // First priority: Check custom path if set
+      if (pathToUse && fs.existsSync(pathToUse)) {
+        console.log(`📁 Scanning custom SFX folder: ${pathToUse}`);
+        foldersToScan.push(pathToUse);
+      }
+      
+      // Also scan default locations for backward compatibility
       if (projectPath.success && projectPath.projectDir) {
         // ONLY scan the exact paths where we save files
         // 1. Primary location: Project/SFX/ai sfx
         const primaryPath = `${projectPath.projectDir}/SFX/ai sfx`;
-        if (fs.existsSync(primaryPath)) {
+        if (fs.existsSync(primaryPath) && primaryPath !== pathToUse) {
           foldersToScan.push(primaryPath);
         }
         
         // 2. Also scan Project/SFX folder (parent of ai sfx) for manually added files
         const projectSFXPath = `${projectPath.projectDir}/SFX`;
-        if (fs.existsSync(projectSFXPath)) {
+        if (fs.existsSync(projectSFXPath) && projectSFXPath !== pathToUse) {
           console.log(`🎯 Found project SFX folder: ${projectSFXPath}`);
           foldersToScan.push(projectSFXPath);
           
@@ -544,7 +645,7 @@ export const App = () => {
             for (const item of items) {
               if (item.startsWith('.')) continue;
               const subPath = `${projectSFXPath}/${item}`;
-              if (fs.statSync(subPath).isDirectory()) {
+              if (fs.statSync(subPath).isDirectory() && subPath !== pathToUse) {
                 foldersToScan.push(subPath);
               }
             }
@@ -552,8 +653,8 @@ export const App = () => {
             // Skip subfolders that can't be read
           }
         }
-      } else {
-        // Project not saved - check fallback Desktop location
+      } else if (!pathToUse) {
+        // Project not saved and no custom path - check fallback Desktop location
         const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
         const fallbackPath = `${userPath}/Desktop/SFX AI`;
         
@@ -767,7 +868,7 @@ export const App = () => {
       fs.mkdirSync(sfxPath, { recursive: true });
     }
     
-    const existingFiles = await scanExistingSFXFiles();
+    const existingFiles = await scanExistingSFXFiles(state.customSFXPath);
     const nextNumber = getNextNumberForPrompt(prompt, existingFiles);
     
     // NEW: Use numbered suffix naming convention: "explosion sound 1.mp3" (single digit unless multi-digit)
@@ -985,7 +1086,7 @@ export const App = () => {
         
         // Scan files asynchronously
         (async () => {
-          const allFiles = await scanExistingSFXFiles();
+          const allFiles = await scanExistingSFXFiles(state.customSFXPath);
           console.log(`📚 Loaded ${allFiles.length} SFX files for lookup`);
           
           // Cache the results
@@ -1084,16 +1185,21 @@ export const App = () => {
       const savedVolume = parseFloat(localStorage.getItem('sfxVolume') || '0');
       const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') !== 'false';
       const savedSelectedTrack = localStorage.getItem('selectedTrack') || 'A5*';
+      const savedCustomPath = localStorage.getItem('customSFXPath') || null;
       
       setState(prev => ({ 
         ...prev, 
         apiKey: savedApiKey,
         volume: savedVolume,
         trackTargetingEnabled: savedTrackTargeting,
-        selectedTrack: savedSelectedTrack
+        selectedTrack: savedSelectedTrack,
+        customSFXPath: savedCustomPath
       }));
       
       console.log('⚙️ Settings loaded - API key:', savedApiKey ? 'Present' : 'Missing');
+      if (savedCustomPath) {
+        console.log('📁 Custom SFX path:', savedCustomPath);
+      }
       
       if (savedApiKey && savedApiKey !== 'sk-test-key-for-development') {
         showStatus('Ready', 1000);
@@ -1194,6 +1300,62 @@ export const App = () => {
     setState(prev => ({ ...prev, volume }));
     localStorage.setItem('sfxVolume', volume.toString());
   }, []);
+
+  // Handle folder selection
+  const selectSFXFolder = useCallback(async () => {
+    try {
+      // Use CEP's showOpenDialog to let user select a folder
+      const result = window.cep.fs.showOpenDialog(
+        false, // allowMultipleSelection
+        true,  // chooseDirectory
+        'Select SFX Folder',
+        state.customSFXPath || '', // initialPath
+        [] // fileTypes (not used for directories)
+      );
+      
+      if (result.err === 0 && result.data && result.data.length > 0) {
+        const selectedPath = result.data[0];
+        console.log('📁 User selected folder:', selectedPath);
+        
+        // Save to localStorage and state
+        localStorage.setItem('customSFXPath', selectedPath);
+        setState(prev => ({ ...prev, customSFXPath: selectedPath }));
+        
+        showStatus(`SFX folder set to: ${selectedPath}`, 3000);
+        
+        // Force a rescan of files with the new path
+        cachedFileInfoRef.current = [];
+        setState(prev => ({ ...prev, lastScanTime: 0 }));
+      }
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+      showStatus('Error selecting folder', 3000);
+    }
+  }, [state.customSFXPath, showStatus]);
+
+  // Reset to default folder
+  const resetToDefaultFolder = useCallback(() => {
+    localStorage.removeItem('customSFXPath');
+    setState(prev => ({ ...prev, customSFXPath: null }));
+    showStatus('Reset to default SFX folder', 2000);
+    
+    // Force a rescan of files
+    cachedFileInfoRef.current = [];
+    setState(prev => ({ ...prev, lastScanTime: 0 }));
+  }, [showStatus]);
+
+  // Get display path for current SFX folder
+  const getDisplayPath = useCallback(() => {
+    if (state.customSFXPath) {
+      // Shorten path for display if too long
+      const parts = state.customSFXPath.split('/');
+      if (parts.length > 4) {
+        return `.../${parts.slice(-3).join('/')}`;
+      }
+      return state.customSFXPath;
+    }
+    return 'Auto (Project or Desktop)';
+  }, [state.customSFXPath]);
 
 
   // Initialize
@@ -1500,12 +1662,8 @@ export const App = () => {
                 {state.apiKey ? '✅ Connected' : '○ No Key'}
               </span>
               <span className="usage">Usage: --/1000</span>
-              <span className="folder">Folder: /SFX/</span>
-              <button onClick={() => {
-                const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-                const sfxPath = `${userPath}/Desktop/SFX AI`;
-                window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
-              }} className="folder-btn">📁</button>
+              <span className="folder" title={state.customSFXPath || 'Using default folder'}>Folder: {getDisplayPath()}</span>
+              <button onClick={selectSFXFolder} className="folder-btn" title="Select SFX folder">📁</button>
             </div>
           </div>
         </div>
@@ -1536,18 +1694,19 @@ export const App = () => {
               <button onClick={goBackToSettings} className="back-btn">Back</button>
             </div>
             <div className="menu-row-2">
-              <span>Location: /Desktop/SFX AI/</span>
-              <button onClick={() => {
-                const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-                const sfxPath = `${userPath}/Desktop/SFX AI`;
-                window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
-              }} className="change-btn">Change</button>
-              <button onClick={() => {
-                const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-                const sfxPath = `${userPath}/Desktop/SFX AI`;
-                window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
-              }} className="open-btn">Open</button>
-              <button onClick={() => showStatus('Clean functionality coming soon', 2000)} className="clean-btn">Clean</button>
+              <span title={state.customSFXPath || 'Using default folder'}>Location: {getDisplayPath()}</span>
+              <button onClick={selectSFXFolder} className="change-btn" title="Select custom folder">Change</button>
+              <button onClick={async () => {
+                const sfxPath = await getSFXPath();
+                if (sfxPath) {
+                  window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+                }
+              }} className="open-btn" title="Open folder">Open</button>
+              <button onClick={state.customSFXPath ? resetToDefaultFolder : () => showStatus('Already using default folder', 2000)} 
+                      className="clean-btn" 
+                      title={state.customSFXPath ? 'Reset to default folder' : 'Using default folder'}>
+                {state.customSFXPath ? 'Reset' : 'Default'}
+              </button>
             </div>
           </div>
         </div>
