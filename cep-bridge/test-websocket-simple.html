@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CEP WebSocket Test</title>
+    <style>
+        body { 
+            background: #2a2a2a; 
+            color: #fff; 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+        }
+        #log { 
+            background: #1e1e1e; 
+            padding: 10px; 
+            border-radius: 4px; 
+            height: 400px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <h3>🧪 CEP WebSocket Connection Test</h3>
+    
+    <button onclick="testConnection()">🔌 Test WebSocket Connection</button>
+    <button onclick="clearLog()">🗑️ Clear Log</button>
+    
+    <div id="log"></div>
+    
+    <script>
+        let logDiv = document.getElementById('log');
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+        
+        function testConnection() {
+            log('🧪 Starting WebSocket connection test...');
+            
+            // Test environment
+            log('✅ Window object: ' + (typeof window !== 'undefined' ? 'Available' : 'Missing'));
+            log('✅ WebSocket support: ' + (typeof WebSocket !== 'undefined' ? 'Available' : 'Missing'));
+            log('✅ Location: ' + window.location.href);
+            
+            if (typeof WebSocket === 'undefined') {
+                log('❌ WebSocket not supported in this environment');
+                return;
+            }
+            
+            // Test URLs
+            const urls = [
+                'ws://localhost:8090',
+                'ws://127.0.0.1:8090'
+            ];
+            
+            let urlIndex = 0;
+            
+            function tryUrl() {
+                if (urlIndex >= urls.length) {
+                    log('❌ All URLs failed');
+                    return;
+                }
+                
+                const url = urls[urlIndex];
+                log(`🔌 Attempting connection to: ${url}`);
+                
+                try {
+                    const ws = new WebSocket(url);
+                    
+                    ws.onopen = function() {
+                        log(`✅ Connected successfully to: ${url}`);
+                        log('📤 Sending test message...');
+                        
+                        // Send test registration
+                        ws.send(JSON.stringify({
+                            action: 'register',
+                            plugin: 'websocket-test',
+                            payload: { type: 'test' }
+                        }));
+                        
+                        setTimeout(() => {
+                            ws.close();
+                            log('🔌 Connection closed');
+                        }, 3000);
+                    };
+                    
+                    ws.onmessage = function(event) {
+                        log(`📥 Received: ${event.data}`);
+                    };
+                    
+                    ws.onerror = function(error) {
+                        log(`❌ WebSocket error for ${url}: ${error.message || error.toString()}`);
+                        urlIndex++;
+                        setTimeout(tryUrl, 1000);
+                    };
+                    
+                    ws.onclose = function(event) {
+                        log(`🔌 Connection closed: ${event.code} - ${event.reason}`);
+                    };
+                    
+                } catch (e) {
+                    log(`❌ Exception creating WebSocket for ${url}: ${e.message}`);
+                    urlIndex++;
+                    setTimeout(tryUrl, 1000);
+                }
+            }
+            
+            tryUrl();
+        }
+        
+        // Auto-start test
+        log('🚀 CEP WebSocket Test Environment Ready');
+        log('Click "Test WebSocket Connection" to start');
+    </script>
+</body>
+</html>

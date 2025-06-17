@@ -6,9 +6,9 @@ const config: CEP_Config = {
   id: "com.ai.sfx.generator",
   displayName: "AI SFX Generator (Bolt)",
   symlink: "local",
-  port: 3030, // Unique port for AI SFX
-  servePort: 5030,
-  startingDebugPort: 9230, // Different debug port
+  port: 3043, // Unique port for AI SFX
+  servePort: 3043,
+  startingDebugPort: 8873, // Different debug port
   extensionManifestVersion: 6.0,
   requiredRuntimeVersion: 9.0,
   hosts: [

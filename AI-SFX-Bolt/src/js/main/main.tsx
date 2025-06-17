@@ -26,7 +26,7 @@ interface SFXState {
   lastScanTime: number; // Track when we last scanned
   isScanningFiles: boolean; // Show loading state
   // Menu system state
-  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files';
+  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files' | 'folder';
   // Track targeting system
   trackTargetingEnabled: boolean;
   selectedTrack: string;
@@ -1266,7 +1266,7 @@ export const App = () => {
     }
   }, [state.menuMode, state.trackTargetingEnabled, detectTargetedTrack]);
 
-  const openMenu = useCallback((menuType: 'api' | 'help' | 'files') => {
+  const openMenu = useCallback((menuType: 'api' | 'help' | 'files' | 'folder') => {
     setState(prev => ({ ...prev, menuMode: menuType }));
   }, []);
 
@@ -1634,8 +1634,9 @@ export const App = () => {
             
             <div className="menu-buttons">
               <button className="menu-btn" onClick={() => openMenu('api')} title="API Setup">🔧</button>
+              <button className="menu-btn" onClick={() => openMenu('folder')} title="Folder Settings">📁</button>
+              <button className="menu-btn" onClick={() => openMenu('files')} title="Files">📂</button>
               <button className="menu-btn" onClick={() => openMenu('help')} title="Help">❓</button>
-              <button className="menu-btn" onClick={() => openMenu('files')} title="Files">📁</button>
             </div>
           </div>
         </div>
@@ -1645,25 +1646,69 @@ export const App = () => {
       {state.menuMode === 'api' && (
         <div className="menu-overlay">
           <div className="api-menu">
-            <div className="menu-row-1">
-              <span>API Key:</span>
-              <input
-                type="password"
-                placeholder="ElevenLabs API Key"
-                value={state.apiKey}
-                onChange={(e) => setState(prev => ({ ...prev, apiKey: e.target.value }))}
-                className="api-input"
-              />
-              <button onClick={() => saveApiKey(state.apiKey)} className="test-btn">Test</button>
+            <div className="menu-header">
+              <span className="menu-title">API Configuration</span>
               <button onClick={goBackToSettings} className="back-btn">Back</button>
             </div>
-            <div className="menu-row-2">
-              <span className={`api-status ${state.apiKey ? 'connected' : 'disconnected'}`}>
-                {state.apiKey ? '✅ Connected' : '○ No Key'}
-              </span>
-              <span className="usage">Usage: --/1000</span>
-              <span className="folder" title={state.customSFXPath || 'Using default folder'}>Folder: {getDisplayPath()}</span>
-              <button onClick={selectSFXFolder} className="folder-btn" title="Select SFX folder">📁</button>
+            <div className="menu-content">
+              <div className="api-input-row">
+                <span>API Key:</span>
+                <input
+                  type="password"
+                  placeholder="ElevenLabs API Key"
+                  value={state.apiKey}
+                  onChange={(e) => setState(prev => ({ ...prev, apiKey: e.target.value }))}
+                  className="api-input"
+                />
+                <button onClick={() => saveApiKey(state.apiKey)} className="save-btn">Save</button>
+              </div>
+              <div className="api-status-row">
+                <span className={`api-status ${state.apiKey ? 'connected' : 'disconnected'}`}>
+                  {state.apiKey ? '✅ Connected' : '❌ No API Key'}
+                </span>
+                <span className="usage">Usage: --/1000 generations</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Folder Menu */}
+      {state.menuMode === 'folder' && (
+        <div className="menu-overlay">
+          <div className="folder-menu">
+            <div className="menu-header">
+              <span className="menu-title">SFX Folder Settings</span>
+              <button onClick={goBackToSettings} className="back-btn">Back</button>
+            </div>
+            <div className="menu-content">
+              <div className="folder-path-row">
+                <span className="folder-label">Current Location:</span>
+                <span className="folder-path" title={state.customSFXPath || 'Using default folder'}>
+                  {getDisplayPath()}
+                </span>
+              </div>
+              <div className="folder-actions">
+                <button onClick={selectSFXFolder} className="action-btn primary" title="Choose a custom folder">
+                  📁 Select Folder
+                </button>
+                <button onClick={async () => {
+                  const sfxPath = await getSFXPath();
+                  if (sfxPath) {
+                    window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+                  }
+                }} className="action-btn" title="Open folder in file browser">
+                  📂 Open Folder
+                </button>
+                <button 
+                  onClick={state.customSFXPath ? resetToDefaultFolder : () => showStatus('Already using default folder', 2000)} 
+                  className="action-btn" 
+                  title={state.customSFXPath ? 'Reset to default folder' : 'Using default folder'}
+                  disabled={!state.customSFXPath}
+                >
+                  🔄 Reset to Default
+                </button>
+              </div>
             </div>
           </div>
         </div>

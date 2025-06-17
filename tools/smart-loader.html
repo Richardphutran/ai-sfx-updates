@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Text Editor - Smart Loader</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #232323;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        #devFrame, #prodApp {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #232323;
+        }
+        
+        #prodApp {
+            display: none;
+        }
+        
+        /* Status indicator */
+        .status-indicator {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            z-index: 1000;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        
+        .status-indicator:hover {
+            opacity: 1;
+        }
+        
+        .status-indicator.dev {
+            background: #00cc66;
+            color: #000;
+        }
+        
+        .status-indicator.prod {
+            background: #ff9900;
+            color: #000;
+        }
+        
+        .status-indicator.connecting {
+            background: #0099ff;
+            color: #fff;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            50% { opacity: 0.4; }
+            100% { opacity: 0.8; }
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #232323;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 999;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #0099ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #888;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Connecting to development server...</div>
+    </div>
+    
+    <!-- Development iframe -->
+    <iframe id="devFrame" style="display:none;"></iframe>
+    
+    <!-- Production container -->
+    <div id="prodApp" style="display:none;"></div>
+    
+    <!-- Status indicator -->
+    <div id="statusIndicator" class="status-indicator connecting" style="display:none;">
+        <span id="statusText">Connecting...</span>
+    </div>
+    
+    <script src="./connection-manager.js"></script>
+    <script>
+        const DEV_URL = 'http://localhost:3040/main/index.html';
+        const PROD_PATH = './index.html';
+        const CHECK_INTERVAL = 2000;
+        const RETRY_INTERVAL = 3000;
+        
+        let currentMode = null;
+        let checkTimer = null;
+        let connectionManager = null;
+        
+        // Initialize connection manager
+        window.addEventListener('load', () => {
+            connectionManager = new ConnectionManager({
+                devUrl: DEV_URL,
+                prodPath: PROD_PATH,
+                onModeChange: handleModeChange,
+                onStatusChange: updateStatus
+            });
+            
+            connectionManager.start();
+        });
+        
+        // Handle mode changes
+        function handleModeChange(mode, url) {
+            const devFrame = document.getElementById('devFrame');
+            const prodApp = document.getElementById('prodApp');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            
+            currentMode = mode;
+            
+            if (mode === 'dev') {
+                devFrame.src = url;
+                devFrame.style.display = 'block';
+                prodApp.style.display = 'none';
+                loadingOverlay.style.display = 'none';
+            } else if (mode === 'prod') {
+                devFrame.style.display = 'none';
+                prodApp.style.display = 'block';
+                loadingOverlay.style.display = 'none';
+                
+                // Load production app if not already loaded
+                if (!prodApp.innerHTML) {
+                    loadProductionApp();
+                }
+            }
+            
+            // Show status indicator after initial load
+            setTimeout(() => {
+                document.getElementById('statusIndicator').style.display = 'block';
+            }, 1000);
+        }
+        
+        // Update status indicator
+        function updateStatus(status, text) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            indicator.className = `status-indicator ${status}`;
+            statusText.textContent = text;
+        }
+        
+        // Load production app
+        async function loadProductionApp() {
+            const prodApp = document.getElementById('prodApp');
+            try {
+                const response = await fetch(PROD_PATH);
+                const html = await response.text();
+                
+                // Create a temporary container to parse the HTML
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                
+                // Extract and inject styles
+                const styles = temp.querySelectorAll('link[rel="stylesheet"], style');
+                styles.forEach(style => {
+                    if (style.tagName === 'LINK') {
+                        const newLink = document.createElement('link');
+                        newLink.rel = 'stylesheet';
+                        newLink.href = style.href.replace('/main/', '');
+                        document.head.appendChild(newLink);
+                    } else {
+                        document.head.appendChild(style.cloneNode(true));
+                    }
+                });
+                
+                // Extract and inject the app container
+                const appContent = temp.querySelector('#app');
+                if (appContent) {
+                    prodApp.innerHTML = '<div id="app"></div>';
+                }
+                
+                // Extract and inject scripts
+                const scripts = temp.querySelectorAll('script');
+                scripts.forEach(script => {
+                    if (script.src) {
+                        const newScript = document.createElement('script');
+                        newScript.src = script.src.replace('/main/', '');
+                        document.body.appendChild(newScript);
+                    } else if (script.innerHTML && !script.innerHTML.includes('window.require')) {
+                        const newScript = document.createElement('script');
+                        newScript.innerHTML = script.innerHTML;
+                        document.body.appendChild(newScript);
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to load production app:', error);
+                prodApp.innerHTML = '<div style="color: #ff6666; padding: 20px;">Failed to load production build</div>';
+            }
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Cmd+R or Ctrl+R to reload
+            if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+                e.preventDefault();
+                if (currentMode === 'dev') {
+                    document.getElementById('devFrame').src = DEV_URL + '?t=' + Date.now();
+                } else {
+                    window.location.reload();
+                }
+            }
+            
+            // Cmd+Shift+D to toggle status indicator
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'd') {
+                e.preventDefault();
+                const indicator = document.getElementById('statusIndicator');
+                indicator.style.display = indicator.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+        
+        // Handle iframe errors
+        document.getElementById('devFrame').addEventListener('error', () => {
+            console.log('Dev frame error, switching to production mode');
+            connectionManager.checkConnection();
+        });
+    </script>
+</body>
+</html>

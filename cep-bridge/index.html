@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Podcast Pilot Bridge</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*; connect-src 'self' ws://localhost:* ws://127.0.0.1:*;">
+    <style>
+        body {
+            background: #2a2a2a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            margin: 0;
+        }
+        #status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .connected {
+            background: #2d5a2d;
+            color: #90ee90;
+        }
+        .disconnected {
+            background: #5a2d2d;
+            color: #ff6b6b;
+        }
+        .log {
+            font-size: 11px;
+            color: #999;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .log-time {
+            color: #666;
+            margin-right: 8px;
+        }
+        .log-premiere {
+            color: #4a9eff;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        button {
+            background: #3a3a3a;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 5px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #4a4a4a;
+        }
+    </style>
+</head>
+<body>
+    <h3>🌉 Premiere Bridge</h3>
+    <div id="status" class="disconnected">Disconnected</div>
+    
+    <div class="controls">
+        <button onclick="clearLog()">Clear Console</button>
+        <button onclick="reloadBridge()">🔄 Reload Bridge</button>
+        <button onclick="forceConnect()">🔌 Force Connect</button>
+        <button onclick="testExtendScript()">🧪 Test ExtendScript</button>
+        <button onclick="hotReloadPlugin()">🔥 Hot Reload</button>
+    </div>
+    
+    <div class="controls">
+        <h4>Debugging Test Buttons:</h4>
+        <button onclick="testWebSocketForwarding()">🔌 Test Electron Console</button>
+        <button onclick="testButtonClick('Test Connection')">🔌 Test Connection</button>
+        <button onclick="testButtonClick('Analyze Timeline')">🎬 Analyze Timeline</button>
+        <button onclick="testButtonClick('Multi-Cam Detection')">📹 Multi-Cam Detection</button>
+        <button onclick="testButtonClick('Track Organization')">📊 Track Organization</button>
+    </div>
+    
+    <div class="log" id="log"></div>
+    
+    <script src="CSInterface.js"></script>
+    <script src="jsx/bridge.js"></script>
+    <script src="jsx/cep-event-bridge.js"></script>
+    
+    <script>
+        // Test button functionality that generates debugging information
+        function testButtonClick(buttonName) {
+            console.log(`🔘 [CEP BRIDGE] ${buttonName} button clicked - generating debug info`);
+            console.log(`🧪 [CEP BRIDGE] Button test triggered at ${new Date().toLocaleTimeString()}`);
+            console.log(`🎬 [CEP BRIDGE] Testing ${buttonName} functionality`);
+            
+            // Call the appropriate ExtendScript function based on button
+            var cs = new CSInterface();
+            
+            if (!cs) {
+                console.error('❌ CSInterface not available');
+                return;
+            }
+            
+            console.log('✅ CSInterface available, calling ExtendScript...');
+            
+            switch(buttonName) {
+                case 'Test Connection':
+                    console.log('📤 [CEP BRIDGE] Testing connection...');
+                    cs.evalScript('app.name + " version " + app.version', function(result) {
+                        console.log(`✅ [CEP BRIDGE] ${buttonName} result:`, result);
+                        console.log(`🎬 [CEP BRIDGE] Test Connection successful!`);
+                    });
+                    break;
+                    
+                case 'Analyze Timeline':
+                    console.log('📤 [CEP BRIDGE] Analyzing timeline...');
+                    cs.evalScript('app.project.activeSequence ? "Timeline: " + app.project.activeSequence.name : "No active timeline"', function(result) {
+                        console.log(`🎬 [CEP BRIDGE] ${buttonName} result:`, result);
+                        console.log(`🎬 [CEP BRIDGE] Timeline analysis completed!`);
+                    });
+                    break;
+                    
+                case 'Multi-Cam Detection':
+                    console.log('📤 [CEP BRIDGE] === MULTICAM TEST START ===');
+                    console.log('✅ [CEP BRIDGE] Multicam button clicked successfully!');
+                    
+                    // ULTRA-MINIMAL ExtendScript to prevent stack overrun
+                    var minimalScript = `
+                        try {
+                            console.log('🧪 [CEP BRIDGE] Multi-cam test started');
+                            var project = app.project;
+                            var timeline = project.activeSequence;
+                            var videoTracks = timeline ? timeline.videoTracks.numTracks : 0;
+                            console.log('📊 [CEP BRIDGE] Video tracks detected: ' + videoTracks);
+                            console.log('✅ [CEP BRIDGE] === MULTICAM TEST COMPLETE ===');
+                            JSON.stringify({ success: true, tracks: videoTracks, message: 'Multicam test completed' });
+                        } catch (e) {
+                            console.log('❌ [CEP BRIDGE] Multicam error: ' + e.toString());
+                            JSON.stringify({ success: false, error: e.toString() });
+                        }
+                    `;
+                    
+                    cs.evalScript(minimalScript, function(result) {
+                        console.log(`📹 [CEP BRIDGE] ${buttonName} result:`, result);
+                        console.log(`🎬 [CEP BRIDGE] Multi-Cam detection completed!`);
+                    });
+                    break;
+                    
+                case 'Track Organization':
+                    console.log('📤 [CEP BRIDGE] Organizing tracks...');
+                    cs.evalScript('app.project.activeSequence ? "Tracks: " + app.project.activeSequence.videoTracks.numTracks + " video, " + app.project.activeSequence.audioTracks.numTracks + " audio" : "No tracks"', function(result) {
+                        console.log(`📊 [CEP BRIDGE] ${buttonName} result:`, result);
+                        console.log(`🎬 [CEP BRIDGE] Track organization completed!`);
+                    });
+                    break;
+                    
+                default:
+                    console.log('📤 Calling default test ExtendScript...');
+                    cs.evalScript('"' + buttonName + ' test completed - debugging data generated"', function(result) {
+                        console.log(`🧪 ${buttonName} result:`, result);
+                        console.log(`🎬 Default test successful - debugging data generated`);
+                    });
+            }
+        }
+        
+        // Test if WebSocket forwarding to Electron console works
+        function testWebSocketForwarding() {
+            console.log('');
+            console.log('🧪🧪🧪 [CEP BRIDGE] === WEBSOCKET TEST START ===');
+            console.log('🔌 [CEP BRIDGE] Testing WebSocket forwarding to Electron console...');
+            console.log('🎯 [CEP BRIDGE] This message should appear in BOTH consoles if forwarding works');
+            console.log('');
+            
+            // DIRECT WebSocket test - bypass bridge system
+            try {
+                console.log('🔧 [CEP BRIDGE] Testing DIRECT WebSocket connection...');
+                const testWS = new WebSocket('ws://localhost:8090');
+                
+                testWS.onopen = function() {
+                    console.log('✅ [CEP BRIDGE] DIRECT WebSocket connected successfully!');
+                    testWS.send(JSON.stringify({
+                        action: 'console',
+                        plugin: 'direct-test',
+                        payload: {
+                            message: '🎉 DIRECT TEST: WebSocket works in CEP!',
+                            source: 'direct-websocket-test'
+                        }
+                    }));
+                    testWS.close();
+                };
+                
+                testWS.onerror = function(error) {
+                    console.log('❌ [CEP BRIDGE] DIRECT WebSocket failed:', error);
+                };
+                
+                testWS.onclose = function() {
+                    console.log('🔌 [CEP BRIDGE] DIRECT WebSocket closed');
+                };
+                
+            } catch (e) {
+                console.log('❌ [CEP BRIDGE] DIRECT WebSocket exception:', e.message);
+            }
+            
+            // Check bridge WebSocket status
+            if (window.bridgeDebug && window.bridgeDebug.ws) {
+                const wsState = window.bridgeDebug.ws.readyState;
+                const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+                console.log(`🔍 [CEP BRIDGE] Bridge WebSocket state: ${wsState} (${stateNames[wsState] || 'UNKNOWN'})`);
+                
+                if (wsState === 1) { // OPEN
+                    console.log('✅ [CEP BRIDGE] Bridge WebSocket is connected - forwarding should work');
+                    console.log('🎉 [CEP BRIDGE] If you see this in Electron console, forwarding works!');
+                } else {
+                    console.log('❌ [CEP BRIDGE] Bridge WebSocket is NOT connected');
+                    console.log('💡 [CEP BRIDGE] Try clicking "Force Connect" button');
+                }
+            } else {
+                console.log('❌ [CEP BRIDGE] Bridge WebSocket object not found');
+            }
+            
+            console.log('🧪🧪🧪 [CEP BRIDGE] === WEBSOCKET TEST END ===');
+            console.log('');
+        }
+        
+        // Force WebSocket connection attempt
+        function forceConnect() {
+            console.log('🔌 [CEP BRIDGE] Force connecting to bridge server...');
+            if (window.bridgeDebug && window.bridgeDebug.connect) {
+                window.bridgeDebug.connect();
+                console.log('🔌 [CEP BRIDGE] Connection attempt triggered');
+            } else {
+                console.log('❌ [CEP BRIDGE] Bridge connect function not available');
+            }
+        }
+    </script>
+</body>
+</html>

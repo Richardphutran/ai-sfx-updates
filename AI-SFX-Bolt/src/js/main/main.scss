@@ -829,7 +829,7 @@ input[type="text"], textarea {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 35px;
+  height: 60px;
   background: rgba(42, 42, 42, 0.98);
   border-top: 1px solid var(--border-color);
   backdrop-filter: blur(10px);
@@ -989,12 +989,34 @@ input[type="text"], textarea {
 }
 
 /* Menu Screens */
-.api-menu, .help-menu, .files-menu {
+.api-menu, .help-menu, .files-menu, .folder-menu {
   padding: var(--space-sm) var(--space-md);
   height: 100%;
   display: flex;
   flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.menu-header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  font-size: 11px;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--border-color);
+  
+  .menu-title {
+    color: var(--text-active);
+    font-weight: 500;
+  }
+}
+
+.menu-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  justify-content: center;
 }
 
 .menu-row-1, .menu-row-2 {
@@ -1029,7 +1051,61 @@ input[type="text"], textarea {
   }
 }
 
-.test-btn, .back-btn, .change-btn, .open-btn, .clean-btn, .email-btn {
+/* API Menu Specific */
+.api-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  
+  span {
+    font-size: 10px;
+    color: var(--text-active);
+    min-width: 60px;
+  }
+}
+
+.api-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-color);
+}
+
+/* Folder Menu Specific */
+.folder-path-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  
+  .folder-label {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  
+  .folder-path {
+    font-size: 10px;
+    color: var(--text-active);
+    font-family: monospace;
+    background: var(--bg-secondary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.folder-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.test-btn, .back-btn, .change-btn, .open-btn, .clean-btn, .email-btn, .save-btn, .action-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-active);
@@ -1044,6 +1120,28 @@ input[type="text"], textarea {
     background: var(--primary-blue);
     border-color: var(--primary-blue);
     color: var(--text-white);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    
+    &:hover {
+      background: var(--bg-secondary);
+      border-color: var(--border-color);
+      color: var(--text-active);
+    }
+  }
+  
+  &.primary {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: var(--text-white);
+    
+    &:hover {
+      background: var(--primary-blue-dark);
+      border-color: var(--primary-blue-dark);
+    }
   }
 }
 

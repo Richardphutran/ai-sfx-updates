@@ -1,43 +1,36 @@
-# AI SFX Premiere Plugin
+# AI SFX Plugin for Adobe Premiere Pro
 
-An AI-powered sound effects generator plugin for Adobe Premiere Pro using the Common Extensibility Platform (CEP) and Eleven Labs API.
+An AI-powered sound effects generator plugin for Adobe Premiere Pro.
 
-## Features
+## Project Structure
 
-- **AI Sound Generation**: Generate custom sound effects using AI prompts via Eleven Labs API
-- **Spacebar Search**: Quick search for existing SFX in your library
-- **Smart Timeline Placement**: Automatically places audio at playhead or In/Out points
-- **Track Management**: Auto-creates dedicated SFX audio tracks
-- **Real-time Preview**: Preview sounds before adding to timeline
+```
+Ai SFX/
+├── AI-SFX-Bolt/         # Main plugin source code
+│   ├── src/             # Source files
+│   ├── package.json     # Plugin dependencies
+│   └── vite.config.ts   # Build configuration
+├── cep-bridge/          # CEP bridge for Adobe integration
+├── docs/                # Documentation
+├── tools/               # Development tools and scripts
+├── debug/               # Debug utilities and test files
+├── CLAUDE.md            # AI assistant instructions
+└── PRD.md              # Product requirements document
+```
 
-## Installation
+## Quick Start
 
-1. Clone this repository
-2. Navigate to the `AI-SFX-Bolt` directory
-3. Install dependencies: `npm install` or `yarn install`
-4. Build the plugin: `npm run build`
-5. Copy the built plugin to your Adobe CEP extensions folder
+```bash
+cd AI-SFX-Bolt
+npm install
+npm run dev
+```
 
 ## Development
 
-- Built with BOLT CEP framework
-- React-based UI
-- ExtendScript for Premiere Pro integration
-- TypeScript for type safety
+- Main plugin code is in `AI-SFX-Bolt/`
+- Development tools are in `tools/`
+- Documentation is in `docs/`
+- Debug utilities are in `debug/`
 
-## Usage
-
-1. Open Adobe Premiere Pro
-2. Access the plugin from the Window > Extensions menu
-3. Use spacebar to search existing SFX or type prompts to generate new ones
-4. Audio automatically places at your playhead position
-
-## Requirements
-
-- Adobe Premiere Pro CC 2019 or later
-- Eleven Labs API key (for AI generation)
-- Node.js (for development)
-
-## License
-
-MIT License - see LICENSE file for details
+See `docs/README.md` for detailed documentation.

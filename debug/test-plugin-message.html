@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI SFX Plugin Test</title>
+    <script>
+        // Test WebSocket connection to multi-plugin debugger
+        const ws = new WebSocket('ws://localhost:8090');
+        
+        ws.onopen = function() {
+            console.log('✅ Connected to bridge server');
+            
+            // Register as AI SFX
+            ws.send(JSON.stringify({
+                action: 'register',
+                plugin: 'ai-sfx',
+                type: 'cep',
+                payload: {
+                    version: '1.0.0',
+                    sessionId: 'test-' + Date.now(),
+                    type: 'cep'
+                }
+            }));
+            
+            // Send test messages after a short delay
+            setTimeout(() => {
+                ws.send(JSON.stringify({
+                    action: 'console',
+                    plugin: 'ai-sfx',
+                    payload: {
+                        level: 'info',
+                        message: '🔊 AI SFX Plugin is now connected to the Electron debugger!',
+                        source: 'cep',
+                        timestamp: new Date().toISOString()
+                    }
+                }));
+                
+                ws.send(JSON.stringify({
+                    action: 'console',
+                    plugin: 'ai-sfx',
+                    payload: {
+                        level: 'log',
+                        message: '✅ Testing console forwarding from AI SFX',
+                        source: 'cep',
+                        timestamp: new Date().toISOString()
+                    }
+                }));
+                
+                ws.send(JSON.stringify({
+                    action: 'console',
+                    plugin: 'ai-sfx',
+                    payload: {
+                        level: 'warn',
+                        message: '⚠️ This is a test warning from AI SFX',
+                        source: 'cep',
+                        timestamp: new Date().toISOString()
+                    }
+                }));
+                
+                document.getElementById('status').innerHTML = '✅ Messages sent! Check the Electron debugger window.';
+            }, 500);
+        };
+        
+        ws.onerror = function(e) {
+            document.getElementById('status').innerHTML = '❌ Failed to connect to bridge server';
+        };
+    </script>
+</head>
+<body>
+    <h1>AI SFX Plugin Test</h1>
+    <p id="status">Connecting to debugger...</p>
+    <p>Check the Electron debugger desktop app - you should see a purple 🔊 AI SFX tab!</p>
+</body>
+</html>
