@@ -26,7 +26,7 @@ interface SFXState {
   lastScanTime: number; // Track when we last scanned
   isScanningFiles: boolean; // Show loading state
   // Menu system state
-  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files' | 'folder';
+  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files' | 'folder' | 'batch';
   // Track targeting system
   trackTargetingEnabled: boolean;
   selectedTrack: string;
@@ -36,6 +36,16 @@ interface SFXState {
   detectedTargetedTrack: { name: string; number: number } | null;
   // Custom SFX folder path
   customSFXPath: string | null;
+  // Preview system
+  previewAudio: HTMLAudioElement | null;
+  isPlaying: boolean;
+  previewFile: string | null;
+  // Batch processing
+  batchMode: boolean;
+  batchPrompts: string[];
+  batchProgress: number;
+  batchTotal: number;
+  isBatchProcessing: boolean;
 }
 
 interface SFXFileInfo {
@@ -80,7 +90,17 @@ export const App = () => {
     availableTracks: ['A1', 'A2', 'A3', 'A4', 'A5*', 'A6', 'A7'],
     volume: 0,
     detectedTargetedTrack: null,
-    customSFXPath: null
+    customSFXPath: null,
+    // Preview system
+    previewAudio: null,
+    isPlaying: false,
+    previewFile: null,
+    // Batch processing
+    batchMode: false,
+    batchPrompts: [],
+    batchProgress: 0,
+    batchTotal: 0,
+    isBatchProcessing: false
   });
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -986,8 +1006,59 @@ export const App = () => {
     }
   }, [state.isLookupMode, state.allSFXFileInfo]);
 
+  // Preview audio file
+  const previewAudio = useCallback((filePath: string) => {
+    // Stop any existing preview
+    if (state.previewAudio) {
+      state.previewAudio.pause();
+      state.previewAudio.currentTime = 0;
+    }
+
+    // Create new audio element
+    const audio = new Audio(`file://${filePath}`);
+    audio.volume = 0.5; // Set preview volume to 50%
+    
+    audio.onended = () => {
+      setState(prev => ({ ...prev, isPlaying: false, previewFile: null }));
+    };
+    
+    audio.onerror = (error) => {
+      console.error('Audio preview error:', error);
+      setState(prev => ({ ...prev, isPlaying: false, previewFile: null }));
+    };
+
+    // Play the audio
+    audio.play().then(() => {
+      setState(prev => ({ 
+        ...prev, 
+        previewAudio: audio, 
+        isPlaying: true, 
+        previewFile: filePath 
+      }));
+    }).catch(error => {
+      console.error('Failed to play audio:', error);
+    });
+  }, [state.previewAudio]);
+
+  // Stop audio preview
+  const stopPreview = useCallback(() => {
+    if (state.previewAudio) {
+      state.previewAudio.pause();
+      state.previewAudio.currentTime = 0;
+      setState(prev => ({ 
+        ...prev, 
+        previewAudio: null, 
+        isPlaying: false, 
+        previewFile: null 
+      }));
+    }
+  }, [state.previewAudio]);
+
   // Handle SFX file selection
   const handleSFXFileSelect = useCallback(async (filename: string) => {
+    // Stop any preview when selecting
+    stopPreview();
+    
     setState(prev => ({ 
       ...prev, 
       prompt: '',
@@ -1044,7 +1115,7 @@ export const App = () => {
     } finally {
       setState(prev => ({ ...prev, isGenerating: false }));
     }
-  }, [showStatus, state.allSFXFileInfo]);
+  }, [showStatus, state.allSFXFileInfo, stopPreview]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1168,7 +1239,7 @@ export const App = () => {
         prompt: ''
       }));
     }
-  }, [handleGenerate, handleSFXFileSelect, scanExistingSFXFiles, state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.prompt]);
+  }, [handleGenerate, handleSFXFileSelect, scanExistingSFXFiles, state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.prompt, state.lastScanTime, state.customSFXPath]);
 
   // Load settings
   const loadSettings = useCallback(() => {
@@ -1266,7 +1337,7 @@ export const App = () => {
     }
   }, [state.menuMode, state.trackTargetingEnabled, detectTargetedTrack]);
 
-  const openMenu = useCallback((menuType: 'api' | 'help' | 'files' | 'folder') => {
+  const openMenu = useCallback((menuType: 'api' | 'help' | 'files' | 'folder' | 'batch') => {
     setState(prev => ({ ...prev, menuMode: menuType }));
   }, []);
 
@@ -1392,6 +1463,100 @@ export const App = () => {
     };
   }, [loadSettings, updateTimelineInfo]);
 
+  // Batch processing functionality
+  const processBatch = useCallback(async () => {
+    if (state.batchPrompts.length === 0 || !state.apiKey) {
+      showStatus('No prompts to process or missing API key', 3000);
+      return;
+    }
+
+    setState(prev => ({ 
+      ...prev, 
+      isBatchProcessing: true, 
+      batchProgress: 0,
+      batchTotal: prev.batchPrompts.length 
+    }));
+
+    try {
+      for (let i = 0; i < state.batchPrompts.length; i++) {
+        const prompt = state.batchPrompts[i].trim();
+        if (!prompt) continue;
+
+        // Update progress
+        setState(prev => ({ ...prev, batchProgress: i + 1 }));
+        showStatus(`Processing ${i + 1}/${state.batchPrompts.length}: ${prompt}`, 2000);
+
+        // Generate the SFX
+        try {
+          // Determine duration based on current mode
+          let duration = state.currentDuration;
+          if (state.useInOutMode && state.timelineInfo?.duration?.seconds) {
+            duration = Math.max(1, Math.min(22, Math.round(state.timelineInfo.duration.seconds)));
+          } else if (state.autoMode) {
+            duration = 10; // Default for auto mode
+          }
+
+          const audioData = await generateSFX(prompt, duration, state.apiKey, state.promptInfluence);
+          const filePath = await saveAudioFile(audioData, prompt);
+          
+          // Place on timeline with spacing
+          const timelineInfo = state.timelineInfo;
+          let placementPosition = null;
+          
+          if (timelineInfo?.success && timelineInfo.currentTime?.seconds !== null) {
+            // Place each SFX with spacing (duration + 0.5 seconds gap)
+            placementPosition = timelineInfo.currentTime.seconds + (i * (duration + 0.5));
+          }
+
+          // Import and place the audio
+          const result = await evalTS(`importAndPlaceAudioAtTime`, {
+            audioPath: filePath,
+            placementTime: placementPosition,
+            trackIndex: state.trackTargetingEnabled && state.selectedTrack !== 'Auto' 
+              ? parseInt(state.selectedTrack.replace(/[^0-9]/g, '')) - 1 
+              : undefined,
+            volume: state.volume
+          });
+
+          if (!result.success) {
+            console.error(`Failed to place SFX ${i + 1}:`, result.error);
+          }
+
+        } catch (error) {
+          console.error(`Error processing prompt ${i + 1}:`, error);
+          showStatus(`Failed: ${prompt}`, 2000);
+        }
+
+        // Add delay between generations to avoid rate limiting
+        if (i < state.batchPrompts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      showStatus(`Batch complete! Generated ${state.batchProgress} SFX`, 4000);
+      
+      // Clear batch prompts after successful processing
+      setState(prev => ({ 
+        ...prev, 
+        batchPrompts: [], 
+        batchMode: false,
+        menuMode: 'normal' 
+      }));
+
+    } catch (error) {
+      showStatus(`Batch error: ${error instanceof Error ? error.message : String(error)}`, 4000);
+    } finally {
+      setState(prev => ({ 
+        ...prev, 
+        isBatchProcessing: false,
+        batchProgress: 0,
+        batchTotal: 0
+      }));
+    }
+  }, [state.batchPrompts, state.apiKey, state.currentDuration, state.useInOutMode, state.timelineInfo, 
+      state.autoMode, state.promptInfluence, state.trackTargetingEnabled, state.selectedTrack, 
+      state.volume, generateSFX, saveAudioFile, evalTS, showStatus]);
+
   // Real-time track targeting detection
   useEffect(() => {
     let trackTargetingInterval: NodeJS.Timeout | null = null;
@@ -1479,17 +1644,39 @@ export const App = () => {
                   🔍 Scanning SFX files...
                 </div>
               ) : state.filteredSFXFiles.length > 0 ? (
-                state.filteredSFXFiles.map((filename, index) => (
-                  <div 
-                    key={filename}
-                    className={`sfx-dropdown-item ${index === state.selectedDropdownIndex ? 'selected' : ''}`}
-                    data-has-number={hasNumberFormat(filename)}
-                    onClick={() => handleSFXFileSelect(filename)}
-                    onMouseEnter={() => setState(prev => ({ ...prev, selectedDropdownIndex: index }))}
-                  >
-                    {filename}
-                  </div>
-                ))
+                state.filteredSFXFiles.map((filename, index) => {
+                  // Find the file info to get the full path
+                  const fileInfo = state.allSFXFileInfo.find(f => f.filename === filename);
+                  const isPreviewPlaying = state.isPlaying && state.previewFile === fileInfo?.path;
+                  
+                  return (
+                    <div 
+                      key={filename}
+                      className={`sfx-dropdown-item ${index === state.selectedDropdownIndex ? 'selected' : ''} ${isPreviewPlaying ? 'playing' : ''}`}
+                      data-has-number={hasNumberFormat(filename)}
+                      onClick={() => handleSFXFileSelect(filename)}
+                      onMouseEnter={() => setState(prev => ({ ...prev, selectedDropdownIndex: index }))}
+                    >
+                      <span className="sfx-filename">{filename}</span>
+                      {fileInfo && (
+                        <button 
+                          className="preview-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isPreviewPlaying) {
+                              stopPreview();
+                            } else {
+                              previewAudio(fileInfo.path);
+                            }
+                          }}
+                          title={isPreviewPlaying ? "Stop preview" : "Preview audio"}
+                        >
+                          {isPreviewPlaying ? '⏸' : '▶'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
               ) : (
                 <div className={`sfx-dropdown-item sfx-dropdown-empty ${state.selectedDropdownIndex === 0 ? 'selected' : ''}`}>
                   {state.prompt.length > 1 ? 'No matching SFX found' : 'Type to search existing SFX...'}
@@ -1633,6 +1820,7 @@ export const App = () => {
             </div>
             
             <div className="menu-buttons">
+              <button className="menu-btn" onClick={() => openMenu('batch')} title="Batch Mode">📋</button>
               <button className="menu-btn" onClick={() => openMenu('api')} title="API Setup">🔧</button>
               <button className="menu-btn" onClick={() => openMenu('folder')} title="Folder Settings">📁</button>
               <button className="menu-btn" onClick={() => openMenu('files')} title="Files">📂</button>
@@ -1752,6 +1940,63 @@ export const App = () => {
                       title={state.customSFXPath ? 'Reset to default folder' : 'Using default folder'}>
                 {state.customSFXPath ? 'Reset' : 'Default'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Batch Processing Menu */}
+      {state.menuMode === 'batch' && (
+        <div className="menu-overlay batch-menu-overlay">
+          <div className="batch-menu">
+            <div className="batch-header">
+              <span className="menu-title">Batch Processing</span>
+              <button onClick={() => setState(prev => ({ ...prev, menuMode: 'normal' }))} className="close-btn">✕</button>
+            </div>
+            <div className="batch-content">
+              <div className="batch-instructions">
+                Enter multiple SFX prompts (one per line):
+              </div>
+              <textarea
+                className="batch-textarea"
+                placeholder="explosion sound&#10;footsteps on gravel&#10;door creaking open&#10;thunder rumble"
+                value={state.batchPrompts.join('\n')}
+                onChange={(e) => {
+                  const prompts = e.target.value.split('\n');
+                  setState(prev => ({ ...prev, batchPrompts: prompts }));
+                }}
+                disabled={state.isBatchProcessing}
+                rows={6}
+              />
+              {state.isBatchProcessing && (
+                <div className="batch-progress">
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill" 
+                      style={{ width: `${(state.batchProgress / state.batchTotal) * 100}%` }}
+                    />
+                  </div>
+                  <span className="progress-text">
+                    Processing {state.batchProgress} of {state.batchTotal}...
+                  </span>
+                </div>
+              )}
+              <div className="batch-actions">
+                <button 
+                  onClick={processBatch} 
+                  className="batch-process-btn"
+                  disabled={state.isBatchProcessing || state.batchPrompts.filter(p => p.trim()).length === 0}
+                >
+                  {state.isBatchProcessing ? 'Processing...' : `Generate ${state.batchPrompts.filter(p => p.trim()).length} SFX`}
+                </button>
+                <button 
+                  onClick={() => setState(prev => ({ ...prev, batchPrompts: [] }))} 
+                  className="batch-clear-btn"
+                  disabled={state.isBatchProcessing}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
           </div>
         </div>
