@@ -113,14 +113,10 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
       return state.customSFXPath;
     }
     
-    // Try to get project path from timeline info
-    if (state.timelineInfo?.projectPath) {
-      const projectDir = state.timelineInfo.projectPath.replace(/[^/\\]+$/, '');
-      return `${projectDir}SFX/ai sfx`;
-    }
-    
+    // Note: Project path needs to be determined by caller since
+    // TimelineInfo doesn't contain project path information
     return null;
-  }, [state.customSFXPath, state.timelineInfo?.projectPath]);
+  }, [state.customSFXPath]);
 
   /**
    * Get display name for current SFX location
@@ -131,12 +127,9 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
       return `Custom: ${folderName}`;
     }
     
-    if (state.timelineInfo?.projectPath) {
-      return 'Project: SFX/ai sfx';
-    }
-    
-    return 'No location set';
-  }, [state.customSFXPath, state.timelineInfo?.projectPath]);
+    // Default display when no custom path is set
+    return 'Project: SFX/ai sfx';
+  }, [state.customSFXPath]);
 
   /**
    * Ensure SFX directory exists
@@ -165,7 +158,7 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
 
       return sfxPath;
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'ensureSFXDirectory' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'ensureSFXDirectory' });
       return null;
     }
   }, [getCurrentSFXPath]);
@@ -222,7 +215,7 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
       }
 
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'scanSFXFiles' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'scanSFXFiles' });
       dispatch(SFXActions.setScanningFiles(false));
     }
   }, [getCurrentSFXPath, parseSFXFilename, state.lastScanTime, dispatch]);
@@ -257,7 +250,7 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
           return false;
         }
       } catch (error) {
-        ErrorUtils.handleFileError(error, { operation: 'validateFolder' });
+        ErrorUtils.handleFileError(error as Error, { operation: 'validateFolder' });
         return false;
       }
 
@@ -270,7 +263,7 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
       return true;
 
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'setCustomSFXFolder' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'setCustomSFXFolder' });
       return false;
     }
   }, [dispatch, scanSFXFiles]);
@@ -313,14 +306,14 @@ export const useSFXFileManager = ({ state, dispatch }: UseSFXFileManagerProps) =
 
       exec(command, (error: any) => {
         if (error) {
-          ErrorUtils.handleFileError(error, { operation: 'openSFXFolder' });
+          ErrorUtils.handleFileError(error as Error, { operation: 'openSFXFolder' });
         } else {
           errorManager.success('SFX folder opened');
         }
       });
 
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'openSFXFolder' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'openSFXFolder' });
     }
   }, [ensureSFXDirectory]);
 

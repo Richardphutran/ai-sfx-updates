@@ -51,7 +51,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
 
         audio.addEventListener('error', (event) => {
           const error = new Error(`Audio load error: ${audio?.error?.message || 'Unknown error'}`);
-          ErrorUtils.handleFileError(error, { 
+          ErrorUtils.handleFileError(error as Error, { 
             operation: 'loadAudio', 
             path: filePath 
           });
@@ -82,7 +82,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
 
       return audio;
     } catch (error) {
-      ErrorUtils.handleFileError(error, { 
+      ErrorUtils.handleFileError(error as Error, { 
         operation: 'getAudioElement', 
         path: filePath 
       });
@@ -129,7 +129,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
       if (error instanceof Error && error.name === 'NotAllowedError') {
         errorManager.warning('Audio playback blocked by browser. Click to enable audio.');
       } else {
-        ErrorUtils.handleFileError(error, { 
+        ErrorUtils.handleFileError(error as Error, { 
           operation: 'playAudio', 
           path: filePath 
         });
@@ -154,7 +154,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
       currentAudioRef.current = null;
       
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'stopAudio' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'stopAudio' });
     }
   }, [dispatch]);
 
@@ -168,7 +168,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
         dispatch(SFXActions.setPlaying(false));
       }
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'pauseAudio' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'pauseAudio' });
     }
   }, [dispatch]);
 
@@ -182,7 +182,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
         dispatch(SFXActions.setPlaying(true));
       }
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'resumeAudio' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'resumeAudio' });
     }
   }, [dispatch]);
 
@@ -237,7 +237,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
       }, 500);
 
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'updateVolume' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'updateVolume' });
     }
   }, [dispatch]);
 
@@ -273,7 +273,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
         currentAudioRef.current.currentTime = Math.max(0, time);
       }
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'seekTo' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'seekTo' });
     }
   }, []);
 
@@ -312,7 +312,7 @@ export const useAudioPreview = ({ state, dispatch }: UseAudioPreviewProps) => {
       dispatch(SFXActions.setPreviewFile(null));
 
     } catch (error) {
-      ErrorUtils.handleFileError(error, { operation: 'clearCache' });
+      ErrorUtils.handleFileError(error as Error, { operation: 'clearCache' });
     }
   }, [dispatch]);
 

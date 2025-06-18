@@ -86,7 +86,8 @@
       "Bash(git remote set-url:*)",
       "Bash(./start-unified-development.sh:*)",
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

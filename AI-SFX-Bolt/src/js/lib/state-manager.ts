@@ -109,6 +109,10 @@ export interface SFXState {
   // API and settings
   /** ElevenLabs API key for audio generation */
   apiKey: string;
+  /** Whether user has entered a valid license key */
+  isLicensed: boolean;
+  /** Current license key */
+  licenseKey: string;
   
   // UI state
   /** Whether settings panel is visible */
@@ -175,6 +179,8 @@ export type SFXAction =
   
   // API and settings actions
   | { type: 'SET_API_KEY'; payload: string }
+  | { type: 'SET_LICENSE_KEY'; payload: string }
+  | { type: 'SET_LICENSED'; payload: boolean }
   
   // UI actions
   | { type: 'TOGGLE_SETTINGS' }
@@ -227,6 +233,8 @@ export const initialSFXState: SFXState = {
   
   // API and settings
   apiKey: "",
+  isLicensed: false,
+  licenseKey: "",
   
   // UI state
   showSettings: false,
@@ -292,6 +300,12 @@ export function sfxReducer(state: SFXState, action: SFXAction): SFXState {
     // API and settings actions
     case 'SET_API_KEY':
       return { ...state, apiKey: action.payload };
+      
+    case 'SET_LICENSE_KEY':
+      return { ...state, licenseKey: action.payload };
+      
+    case 'SET_LICENSED':
+      return { ...state, isLicensed: action.payload };
     
     // UI actions
     case 'TOGGLE_SETTINGS':
@@ -477,6 +491,18 @@ export const SFXActions = {
    * @param apiKey - The API key string
    */
   setApiKey: (apiKey: string): SFXAction => ({ type: 'SET_API_KEY', payload: apiKey }),
+  
+  /** 
+   * Set license key
+   * @param licenseKey - The license key string
+   */
+  setLicenseKey: (licenseKey: string): SFXAction => ({ type: 'SET_LICENSE_KEY', payload: licenseKey }),
+  
+  /** 
+   * Set licensed status
+   * @param isLicensed - Whether user has valid license
+   */
+  setLicensed: (isLicensed: boolean): SFXAction => ({ type: 'SET_LICENSED', payload: isLicensed }),
   
   // UI
   /** Toggle settings panel visibility */

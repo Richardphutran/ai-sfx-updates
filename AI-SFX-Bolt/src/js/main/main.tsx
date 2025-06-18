@@ -10,6 +10,7 @@ import { errorManager, ErrorUtils, ErrorCategory, ErrorSeverity } from "../lib/e
 import { ErrorSystemTests } from "../lib/test-error-system";
 import { SecurityManager, SecureStorage, InputSanitizer, SecurityValidator } from "../lib/security-manager";
 import { sfxReducer, initialSFXState, SFXActions, type SFXState, type SFXFileInfo } from "../lib/state-manager";
+import { LicenseManager } from "../lib/license-manager";
 import "./main.scss";
 import "../components/ToastSystem.scss";
 import "../components/ErrorBoundary.scss";
@@ -973,25 +974,46 @@ export const App = () => {
     return filePath;
   };
 
-  // Handle text input changes
+  // Handle license key input
+  const handleLicenseKeyInput = useCallback(async (value: string) => {
+    try {
+      const result = await LicenseManager.processLicenseInput(value);
+      
+      if (result.success && result.apiKey) {
+        // License validated successfully
+        dispatch(SFXActions.setLicensed(true));
+        dispatch(SFXActions.setLicenseKey(value));
+        dispatch(SFXActions.setApiKey(result.apiKey));
+        dispatch(SFXActions.setPrompt('')); // Clear the input
+        
+        console.log('✅ License activated successfully');
+      } else {
+        // License validation failed
+        dispatch(SFXActions.setLicensed(false));
+        console.log('❌ License validation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('License processing error:', error);
+      dispatch(SFXActions.setLicensed(false));
+    }
+  }, [dispatch]);
+
+  // Handle text input changes (license key or prompt)
   const handlePromptChange = useCallback((value: string) => {
     // Sanitize input to prevent XSS and injection attacks
     const sanitizedValue = InputSanitizer.sanitizeHTML(value);
     
-    console.log('📝 Input changed to:', `"${sanitizedValue}"`, 'length:', sanitizedValue.length, 'isLookupMode:', state.isLookupMode);
+    console.log('📝 Input changed to:', `"${sanitizedValue}"`, 'length:', sanitizedValue.length, 'isLookupMode:', state.isLookupMode, 'isLicensed:', state.isLicensed);
     
-    if (state.isLookupMode) {
+    // Set the prompt value regardless of license status
+    dispatch(SFXActions.setPrompt(sanitizedValue));
+    
+    // Only process lookup mode if licensed
+    if (state.isLicensed && state.isLookupMode) {
       // Already in lookup mode - handle filtering and searching
       if (sanitizedValue.trim() === '') {
         // If cleared, exit lookup mode
-        setState(prev => ({ 
-          ...prev, 
-          isLookupMode: false, 
-          showSFXDropdown: false,
-          filteredSFXFiles: [],
-          selectedDropdownIndex: -1,
-          prompt: ''
-        }));
+        dispatch(SFXActions.exitLookupMode());
       } else {
         // Filter files based on search term (excluding the initial space)
         const searchTerm = sanitizedValue.replace(/^\s+/, '').toLowerCase();
@@ -1061,23 +1083,15 @@ export const App = () => {
         const filteredNames = filteredFileInfo.map(f => f.filename);
         
         console.log(`🎯 Setting filtered files to: ${filteredNames.length} items`, filteredNames);
-        setState(prev => ({ 
-          ...prev, 
-          prompt: sanitizedValue,
-          filteredSFXFiles: filteredNames,
-          selectedDropdownIndex: filteredNames.length > 0 ? 0 : -1,
-          showSFXDropdown: true // Ensure dropdown stays visible
-        }));
+        dispatch(SFXActions.setFilteredSFXFiles(filteredNames));
+        dispatch(SFXActions.setSelectedDropdownIndex(filteredNames.length > 0 ? 0 : -1));
+        dispatch(SFXActions.showSFXDropdown(true));
       }
     } else {
-      // Normal typing mode - just update prompt for generation
-      setState(prev => ({ 
-        ...prev, 
-        prompt: sanitizedValue,
-        showSFXDropdown: false
-      }));
+      // Normal typing mode - just hide dropdown (prompt already set above)
+      dispatch(SFXActions.showSFXDropdown(false));
     }
-  }, [state.isLookupMode, state.allSFXFileInfo]);
+  }, [dispatch, state.isLicensed, state.isLookupMode, state.allSFXFileInfo]);
 
   // Preview audio file
   const previewAudio = useCallback((filePath: string) => {
@@ -1191,11 +1205,11 @@ export const App = () => {
   }, [showStatus, state.allSFXFileInfo, stopPreview]);
 
   // Handle keyboard shortcuts
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback(async (e: React.KeyboardEvent) => {
     console.log('🎹 Key pressed:', e.key, 'Prompt:', `"${state.prompt}"`, 'isLookupMode:', state.isLookupMode);
     
-    // Handle spacebar press when prompt is empty to trigger lookup mode
-    if (e.key === ' ' && state.prompt === '' && !state.isLookupMode) {
+    // Handle spacebar press when prompt is empty to trigger lookup mode (only if licensed)
+    if (e.key === ' ' && state.prompt === '' && !state.isLookupMode && state.isLicensed) {
       console.log('🔍 Spacebar pressed - triggering lookup mode');
       e.preventDefault(); // Prevent space from being added to textarea
       
@@ -1208,24 +1222,12 @@ export const App = () => {
         console.log(`📚 Using cached data: ${cachedFileInfoRef.current.length} SFX files`);
         const fileNames = cachedFileInfoRef.current.map(f => f.filename);
         
-        setState(prev => ({ 
-          ...prev, 
-          isLookupMode: true, 
-          showSFXDropdown: true,
-          prompt: ' ',
-          allSFXFileInfo: cachedFileInfoRef.current,
-          existingSFXFiles: fileNames,
-          filteredSFXFiles: fileNames,
-          selectedDropdownIndex: fileNames.length > 0 ? 0 : -1
-        }));
+        dispatch(SFXActions.enterLookupMode(cachedFileInfoRef.current, now));
       } else {
         // Show loading state and scan in background
-        setState(prev => ({ 
-          ...prev, 
-          isLookupMode: true, 
-          showSFXDropdown: true,
-          prompt: ' '
-        }));
+        dispatch(SFXActions.setLookupMode(true));
+        dispatch(SFXActions.showSFXDropdown(true));
+        dispatch(SFXActions.setPrompt(' '));
         
         // Use debounced file scanning for better performance
         debouncedFileScanning();
@@ -1233,8 +1235,8 @@ export const App = () => {
       return;
     }
     
-    // Arrow key navigation in lookup mode - prevent default cursor movement
-    if (state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0) {
+    // Arrow key navigation in lookup mode - prevent default cursor movement (only if licensed)
+    if (state.isLicensed && state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         console.log(`🔼 Arrow ${e.key} pressed - current index: ${state.selectedDropdownIndex}, total files: ${state.filteredSFXFiles.length}`);
         e.preventDefault(); // Prevent text cursor movement
@@ -1245,56 +1247,46 @@ export const App = () => {
             ? state.selectedDropdownIndex + 1 
             : 0; // Wrap to top
           console.log(`⬇️ Moving down to index: ${newIndex}`);
-          setState(prev => ({
-            ...prev,
-            selectedDropdownIndex: newIndex
-          }));
+          dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
         } else { // ArrowUp
           const newIndex = state.selectedDropdownIndex > 0 
             ? state.selectedDropdownIndex - 1 
             : state.filteredSFXFiles.length - 1; // Wrap to bottom
           console.log(`⬆️ Moving up to index: ${newIndex}`);
-          setState(prev => ({
-            ...prev,
-            selectedDropdownIndex: newIndex
-          }));
+          dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
         }
         return; // Early return to prevent further processing
       }
     }
     
     if (e.key === 'Enter' && !e.shiftKey) {
-      console.log('🚀 Enter pressed - isLookupMode:', state.isLookupMode, 'selectedIndex:', state.selectedDropdownIndex, 'filteredFiles:', state.filteredSFXFiles.length);
+      console.log('🚀 Enter pressed - isLicensed:', state.isLicensed, 'isLookupMode:', state.isLookupMode, 'selectedIndex:', state.selectedDropdownIndex, 'filteredFiles:', state.filteredSFXFiles.length);
       e.preventDefault();
+      
+      // If not licensed, treat input as license key
+      if (!state.isLicensed && state.prompt.trim()) {
+        console.log('🔑 Processing license key input');
+        await handleLicenseKeyInput(state.prompt.trim());
+        return;
+      }
+      
       if (state.isLookupMode && state.selectedDropdownIndex >= 0 && state.filteredSFXFiles.length > 0) {
         // Select currently highlighted result
         console.log('📁 Selecting SFX file:', state.filteredSFXFiles[state.selectedDropdownIndex]);
         handleSFXFileSelect(state.filteredSFXFiles[state.selectedDropdownIndex]);
-      } else {
+      } else if (state.isLicensed) {
         console.log('🎵 Calling handleGenerate with prompt:', `"${state.prompt}"`);
         handleGenerate();
       }
     } else if (e.key === 'Escape') {
       // Exit lookup mode
-      setState(prev => ({ 
-        ...prev, 
-        isLookupMode: false, 
-        showSFXDropdown: false,
-        selectedDropdownIndex: -1,
-        prompt: ''
-      }));
+      dispatch(SFXActions.exitLookupMode());
     } else if (e.key === 'Backspace' && state.isLookupMode && state.prompt === ' ') {
       // If backspacing on the initial space, exit lookup mode
       e.preventDefault();
-      setState(prev => ({ 
-        ...prev, 
-        isLookupMode: false, 
-        showSFXDropdown: false,
-        selectedDropdownIndex: -1,
-        prompt: ''
-      }));
+      dispatch(SFXActions.exitLookupMode());
     }
-  }, [handleGenerate, handleSFXFileSelect, scanExistingSFXFiles, state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.prompt, state.lastScanTime, state.customSFXPath]);
+  }, [dispatch, handleGenerate, handleSFXFileSelect, handleLicenseKeyInput, scanExistingSFXFiles, state.isLicensed, state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.prompt, state.lastScanTime, state.customSFXPath]);
 
   // Load settings
   const loadSettings = useCallback(() => {
@@ -1302,36 +1294,38 @@ export const App = () => {
       // Initialize security manager
       SecurityManager.initialize();
       
-      // Load API key securely
-      const savedApiKey = SecureStorage.getAPIKey();
+      // Initialize license system
+      const licenseInfo = LicenseManager.initialize();
       
+      // Load other settings
       const savedVolume = parseFloat(localStorage.getItem('sfxVolume') || '0');
       const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') !== 'false';
       const savedSelectedTrack = localStorage.getItem('selectedTrack') || 'A5*';
       const savedCustomPath = localStorage.getItem('customSFXPath') || null;
       
       dispatch(SFXActions.loadSettings({
-        apiKey: savedApiKey,
+        apiKey: licenseInfo.apiKey,
+        isLicensed: licenseInfo.isLicensed,
+        licenseKey: licenseInfo.isLicensed ? 'LICENSED' : '',
         volume: savedVolume,
         trackTargetingEnabled: savedTrackTargeting,
         selectedTrack: savedSelectedTrack,
         customSFXPath: savedCustomPath
       }));
       
-      console.log('🔒 Settings loaded securely - API key:', savedApiKey ? 'Present' : 'Missing');
+      console.log('🔒 Settings loaded securely');
+      console.log('📄 License status:', licenseInfo.isLicensed ? 'Valid' : 'Required');
       if (savedCustomPath) {
         console.log('📁 Custom SFX path:', savedCustomPath);
       }
       
-      if (savedApiKey) {
-        showSuccess('Ready - API key loaded securely');
-      } else {
-        showWarning('Please set your API key in settings');
+      if (licenseInfo.isLicensed) {
+        showSuccess('Ready to generate SFX');
       }
     } catch (error) {
       ErrorUtils.handleValidationError('Failed to load settings securely');
     }
-  }, [showStatus]);
+  }, [showSuccess]);
 
   // Settings management
   const openSettings = useCallback(() => {
@@ -1580,7 +1574,12 @@ export const App = () => {
           value={state.prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={state.isGenerating ? "Generating..." : (state.isLookupMode ? "Search existing SFX..." : "Describe your SFX")}
+          placeholder={
+            state.isGenerating ? "Generating..." : 
+            !state.isLicensed ? "License Key" :
+            state.isLookupMode ? "Search existing SFX..." : 
+            "Describe your SFX"
+          }
           disabled={false}
           rows={1}
         />
