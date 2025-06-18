@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI SFX Generator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #2a2a2a;
+            color: #ffffff;
+            font-size: 12px;
+        }
+        
+        .mode-indicator {
+            position: fixed;
+            top: 5px;
+            right: 5px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+        
+        .mode-dev {
+            background: #28a745;
+            color: white;
+        }
+        
+        .mode-prod {
+            background: #fd7e14;
+            color: white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .error {
+            color: #dc3545;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        #app-container {
+            width: 100%;
+            height: 100vh;
+        }
+        
+        iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="mode-indicator" id="modeIndicator">LOADING...</div>
+    <div id="app-container">
+        <div class="loading" id="loadingMessage">
+            🔍 Checking for development server...
+        </div>
+    </div>
+
+    <script src="./connection-manager.js"></script>
+    <script>
+        const DEV_URL = 'http://localhost:3043/main/index.html';
+        const PROD_URL = './main/index.html';
+        
+        const connectionManager = new ConnectionManager({
+            devUrl: DEV_URL,
+            prodUrl: PROD_URL,
+            containerId: 'app-container',
+            indicatorId: 'modeIndicator',
+            loadingId: 'loadingMessage',
+            checkInterval: 5000, // Check every 5 seconds
+            timeout: 3000 // 3 second timeout for dev server check
+        });
+        
+        // Start the smart loader
+        connectionManager.start();
+        
+        // Listen for reload commands (Cmd+R)
+        document.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+                e.preventDefault();
+                connectionManager.forceReload();
+            }
+        });
+    </script>
+</body>
+</html>

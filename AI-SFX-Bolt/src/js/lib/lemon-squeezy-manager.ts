@@ -98,52 +98,72 @@ export class LemonSqueezyManager {
    * Validate license key with Lemon Squeezy API
    */
   private static async validateWithAPI(licenseKey: string, instanceId?: string): Promise<LemonSqueezyLicenseResponse> {
-    const url = `${this.config.apiBaseUrl}/licenses/validate`;
+    // Use Lemon Squeezy's public license validation endpoint
+    const url = `${this.config.apiBaseUrl}/v1/licenses/validate`;
     
-    const formData = new FormData();
-    formData.append('license_key', licenseKey);
-    if (instanceId) {
-      formData.append('instance_id', instanceId);
-    }
+    const payload = {
+      license_key: licenseKey,
+      ...(instanceId && { instance_id: instanceId })
+    };
 
+    console.log('🔑 Validating license with Lemon Squeezy:', { url, payload: { ...payload, license_key: '***' } });
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify(payload)
     });
 
+    console.log('📡 Lemon Squeezy response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      throw new Error(`Lemon Squeezy API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('❌ Lemon Squeezy API error:', { status: response.status, statusText: response.statusText, errorText });
+      throw new Error(`Lemon Squeezy API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log('✅ Lemon Squeezy validation result:', { valid: result.valid, status: result.license_key?.status });
+    return result;
   }
 
   /**
    * Activate license key with Lemon Squeezy API
    */
   private static async activateWithAPI(licenseKey: string, instanceName: string): Promise<LemonSqueezyLicenseResponse> {
-    const url = `${this.config.apiBaseUrl}/licenses/activate`;
+    // Use Lemon Squeezy's public license activation endpoint
+    const url = `${this.config.apiBaseUrl}/v1/licenses/activate`;
     
-    const formData = new FormData();
-    formData.append('license_key', licenseKey);
-    formData.append('instance_name', instanceName);
+    const payload = {
+      license_key: licenseKey,
+      instance_name: instanceName
+    };
 
+    console.log('🚀 Activating license with Lemon Squeezy:', { url, payload: { ...payload, license_key: '***' } });
+    
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify(payload)
     });
 
+    console.log('📡 Lemon Squeezy activation response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      throw new Error(`Lemon Squeezy activation error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('❌ Lemon Squeezy activation error:', { status: response.status, statusText: response.statusText, errorText });
+      throw new Error(`Lemon Squeezy activation error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log('✅ Lemon Squeezy activation result:', { valid: result.valid, status: result.license_key?.status });
+    return result;
   }
 
   /**
@@ -244,6 +264,7 @@ export class LemonSqueezyManager {
       if (cached && cached.instanceId) {
         // Try to validate existing instance
         try {
+          console.log('🔄 Attempting to validate existing license instance...');
           const response = await this.validateWithAPI(licenseKey, cached.instanceId);
           
           if (response.valid && response.license_key.status === 'active') {
@@ -271,8 +292,50 @@ export class LemonSqueezyManager {
         }
       }
 
-      // Need to activate new instance
-      return { valid: false, needsActivation: true };
+      // Try license validation before attempting activation
+      try {
+        console.log('🔍 No cached instance. Attempting license validation...');
+        const response = await this.validateWithAPI(licenseKey);
+        
+        if (response.valid && response.license_key.status === 'active') {
+          // Verify it's our product
+          if (response.meta.store_id.toString() !== this.config.storeId ||
+              response.meta.product_id.toString() !== this.config.productId) {
+            return { valid: false, error: 'License key is not for this product' };
+          }
+          
+          // License is valid! Check if we can/need to activate
+          if (response.license_key.activation_usage >= response.license_key.activation_limit) {
+            console.log('⚠️ License activation limit reached, but license is valid. Using validation-only mode.');
+            
+            // Cache without instance ID (validation-only mode)
+            this.cacheLicense({
+              licenseKey,
+              instanceName: this.generateInstanceName(),
+              status: response.license_key.status as any,
+              customerEmail: response.meta.customer_email,
+              expiresAt: response.license_key.expires_at,
+              lastValidated: Date.now(),
+              validatedOffline: false,
+              apiKey: LEMON_SQUEEZY_CONFIG.PRODUCTION_API_KEY // Replace with actual API key mapping
+            });
+            
+            return { 
+              valid: true, 
+              apiKey: LEMON_SQUEEZY_CONFIG.PRODUCTION_API_KEY
+            };
+          }
+          
+          // License is valid and under activation limit - proceed with activation
+          return { valid: false, needsActivation: true };
+        }
+        
+        return { valid: false, error: response.error || 'Invalid license key' };
+      } catch (validationError) {
+        console.warn('⚠️ Direct validation failed, trying activation:', validationError);
+        // If validation fails, try activation as fallback
+        return { valid: false, needsActivation: true };
+      }
 
     } catch (error) {
       console.error('License validation error:', error);
@@ -296,41 +359,91 @@ export class LemonSqueezyManager {
       }
 
       const instanceName = this.generateInstanceName();
-      const response = await this.activateWithAPI(licenseKey, instanceName);
+      
+      try {
+        const response = await this.activateWithAPI(licenseKey, instanceName);
 
-      if (!response.valid) {
-        return { success: false, error: response.error || 'Activation failed' };
+        if (!response.valid) {
+          return { success: false, error: response.error || 'Activation failed' };
+        }
+        
+        // Continue with successful activation...
+        return this.handleSuccessfulActivation(response, licenseKey, instanceName, apiKey);
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Check if it's an activation limit error
+        if (errorMessage.includes('activation limit') || errorMessage.includes('400')) {
+          console.log('⚠️ Activation limit reached. Attempting validation-only mode...');
+          
+          // Try to validate the license directly (without activation)
+          try {
+            const validationResponse = await this.validateWithAPI(licenseKey);
+            
+            if (validationResponse.valid && validationResponse.license_key.status === 'active') {
+              console.log('✅ License is valid but already activated. Using validation-only mode.');
+              
+              // Cache without instance ID (validation-only mode)
+              this.cacheLicense({
+                licenseKey,
+                instanceName,
+                status: validationResponse.license_key.status as any,
+                customerEmail: validationResponse.meta.customer_email,
+                expiresAt: validationResponse.license_key.expires_at,
+                lastValidated: Date.now(),
+                validatedOffline: false,
+                apiKey
+              });
+              
+              return { success: true };
+            }
+          } catch (validationError) {
+            console.error('❌ Both activation and validation failed:', validationError);
+          }
+        }
+        
+        return { success: false, error: errorMessage };
       }
-
-      // Verify it's our product
-      if (response.meta.store_id.toString() !== this.config.storeId ||
-          response.meta.product_id.toString() !== this.config.productId) {
-        return { success: false, error: 'License key is not for this product' };
-      }
-
-      // Cache the activated license
-      const cachedLicense: CachedLicense = {
-        licenseKey,
-        instanceId: response.instance?.id,
-        instanceName,
-        status: response.license_key.status,
-        customerEmail: response.meta.customer_email,
-        expiresAt: response.license_key.expires_at,
-        lastValidated: Date.now(),
-        validatedOffline: false,
-        apiKey
-      };
-
-      this.cacheLicense(cachedLicense);
-      return { success: true };
-
-    } catch (error) {
-      console.error('License activation error:', error);
+    } catch (outerError) {
+      console.error('License activation outer error:', outerError);
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Activation failed' 
+        error: outerError instanceof Error ? outerError.message : 'Activation failed' 
       };
     }
+  }
+
+  /**
+   * Helper method to handle successful activation
+   */
+  private static handleSuccessfulActivation(
+    response: LemonSqueezyLicenseResponse, 
+    licenseKey: string, 
+    instanceName: string, 
+    apiKey: string
+  ): { success: boolean; error?: string } {
+    // Verify it's our product
+    if (response.meta.store_id.toString() !== this.config.storeId ||
+        response.meta.product_id.toString() !== this.config.productId) {
+      return { success: false, error: 'License key is not for this product' };
+    }
+
+    // Cache the activated license
+    const cachedLicense: CachedLicense = {
+      licenseKey,
+      instanceId: response.instance?.id,
+      instanceName,
+      status: response.license_key.status,
+      customerEmail: response.meta.customer_email,
+      expiresAt: response.license_key.expires_at,
+      lastValidated: Date.now(),
+      validatedOffline: false,
+      apiKey
+    };
+
+    this.cacheLicense(cachedLicense);
+    return { success: true };
   }
 
   /**
@@ -400,9 +513,9 @@ export class LemonSqueezyManager {
       
       if (result.valid && result.apiKey) {
         if (result.isOffline) {
-          errorManager.success('License verified (offline mode)');
+          // License verified offline - silent operation
         } else {
-          errorManager.success('License activated successfully!');
+          // License activated successfully - silent operation
         }
         
         return {
@@ -413,17 +526,16 @@ export class LemonSqueezyManager {
       }
       
       if (result.needsActivation) {
-        // For demo purposes, we'll assume all keys get a demo API key
-        // In production, you'd map license keys to actual ElevenLabs API keys
-        const demoApiKey = 'sk-demo-api-key-replace-with-real-key';
+        // Use production ElevenLabs API key for valid licenses
+        const productionApiKey = LEMON_SQUEEZY_CONFIG.PRODUCTION_API_KEY;
         
-        const activation = await this.activateLicense(licenseKey, demoApiKey);
+        const activation = await this.activateLicense(licenseKey, productionApiKey);
         
         if (activation.success) {
-          errorManager.success('License activated successfully!');
-          return { success: true, apiKey: demoApiKey };
+          // License activated successfully - silent operation
+          return { success: true, apiKey: productionApiKey };
         } else {
-          errorManager.warning(activation.error || 'License activation failed');
+          // Only show errors, not successes
           return { success: false, error: activation.error };
         }
       }
@@ -452,9 +564,9 @@ export class LemonSqueezyManager {
     
     if (result.isLicensed) {
       if (result.isOffline) {
-        errorManager.info('License verified (offline mode)');
+        // License verified - silent operation
       } else {
-        errorManager.info('License verified successfully');
+        // License verified - silent operation
       }
     }
 
