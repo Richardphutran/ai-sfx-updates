@@ -5,6 +5,7 @@
 
 import { SecureStorage } from './security-manager';
 import { errorManager } from './error-manager';
+import { LemonSqueezyManager } from './lemon-squeezy-manager';
 
 /**
  * License validation result interface
@@ -29,7 +30,7 @@ export class LicenseManager {
   };
 
   /**
-   * Validate a license key and return API key if valid
+   * Validate a license key using Lemon Squeezy API
    */
   static async validateLicense(licenseKey: string): Promise<LicenseValidationResult> {
     try {
@@ -38,30 +39,21 @@ export class LicenseManager {
         return { valid: false, error: 'License key cannot be empty' };
       }
 
-      // Normalize license key
-      const normalizedKey = licenseKey.trim().toUpperCase();
-
-      // Check against our license database
-      const apiKey = this.API_KEY_MAP[normalizedKey];
-      if (apiKey && typeof apiKey === 'string') {
-        
-        // Store the license key securely
-        this.storeLicense(normalizedKey, apiKey);
-        
+      // Use Lemon Squeezy for validation
+      const result = await LemonSqueezyManager.validateLicense(licenseKey.trim());
+      
+      if (result.valid && result.apiKey) {
         return {
           valid: true,
-          apiKey,
-          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from now
+          apiKey: result.apiKey,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // Default 1 year
         };
       }
 
-      // In production, this would make an API call to validate
-      // For now, we'll check basic format and reject invalid keys
-      if (normalizedKey.length < 8) {
-        return { valid: false, error: 'License key too short' };
-      }
-
-      return { valid: false, error: 'Invalid license key' };
+      return { 
+        valid: false, 
+        error: result.error || 'Invalid license key' 
+      };
 
     } catch (error) {
       console.error('License validation error:', error);
@@ -92,30 +84,23 @@ export class LicenseManager {
   }
 
   /**
-   * Check if there's a stored valid license
+   * Check if there's a stored valid license (uses Lemon Squeezy cache)
    */
   static getStoredLicense(): LicenseValidationResult | null {
     try {
-      const stored = localStorage.getItem(this.LICENSE_STORAGE_KEY);
-      if (!stored) return null;
-
-      const licenseData = JSON.parse(stored);
+      const result = LemonSqueezyManager.hasValidLicense();
       
-      // Check if license has expired
-      if (licenseData.expiresAt && Date.now() > licenseData.expiresAt) {
-        this.clearLicense();
-        return null;
+      if (result.isLicensed && result.apiKey) {
+        return {
+          valid: true,
+          apiKey: result.apiKey,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // Default
+        };
       }
 
-      return {
-        valid: true,
-        apiKey: licenseData.apiKey,
-        expiresAt: new Date(licenseData.expiresAt)
-      };
-
+      return null;
     } catch (error) {
       console.error('Failed to retrieve stored license:', error);
-      this.clearLicense();
       return null;
     }
   }
@@ -127,6 +112,7 @@ export class LicenseManager {
     try {
       localStorage.removeItem(this.LICENSE_STORAGE_KEY);
       SecureStorage.clearAPIKey();
+      LemonSqueezyManager.logout();
     } catch (error) {
       console.error('Failed to clear license:', error);
     }
@@ -152,20 +138,7 @@ export class LicenseManager {
    * Initialize license system on app start
    */
   static initialize(): { isLicensed: boolean; apiKey: string } {
-    const stored = this.getStoredLicense();
-    
-    if (stored?.valid) {
-      errorManager.info('License verified successfully');
-      return {
-        isLicensed: true,
-        apiKey: stored.apiKey || ''
-      };
-    }
-
-    return {
-      isLicensed: false,
-      apiKey: ''
-    };
+    return LemonSqueezyManager.initialize();
   }
 
   /**
@@ -176,29 +149,6 @@ export class LicenseManager {
     apiKey?: string;
     error?: string;
   }> {
-    try {
-      const result = await this.validateLicense(input);
-      
-      if (result.valid && result.apiKey) {
-        errorManager.success('License activated successfully!');
-        return {
-          success: true,
-          apiKey: result.apiKey
-        };
-      } else {
-        errorManager.warning(result.error || 'Invalid license key');
-        return {
-          success: false,
-          error: result.error
-        };
-      }
-    } catch (error) {
-      const errorMessage = 'License validation failed';
-      errorManager.warning(errorMessage);
-      return {
-        success: false,
-        error: errorMessage
-      };
-    }
+    return LemonSqueezyManager.processLicenseInput(input);
   }
 }

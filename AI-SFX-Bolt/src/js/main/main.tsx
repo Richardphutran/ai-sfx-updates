@@ -1008,8 +1008,8 @@ export const App = () => {
     // Set the prompt value regardless of license status
     dispatch(SFXActions.setPrompt(sanitizedValue));
     
-    // Only process lookup mode if licensed
-    if (state.isLicensed && state.isLookupMode) {
+    // Process lookup mode (available to all users for browsing)
+    if (state.isLookupMode) {
       // Already in lookup mode - handle filtering and searching
       if (sanitizedValue.trim() === '') {
         // If cleared, exit lookup mode
@@ -1091,7 +1091,7 @@ export const App = () => {
       // Normal typing mode - just hide dropdown (prompt already set above)
       dispatch(SFXActions.showSFXDropdown(false));
     }
-  }, [dispatch, state.isLicensed, state.isLookupMode, state.allSFXFileInfo]);
+  }, [dispatch, state.isLookupMode, state.allSFXFileInfo]);
 
   // Preview audio file
   const previewAudio = useCallback((filePath: string) => {
@@ -1208,8 +1208,8 @@ export const App = () => {
   const handleKeyDown = useCallback(async (e: React.KeyboardEvent) => {
     console.log('🎹 Key pressed:', e.key, 'Prompt:', `"${state.prompt}"`, 'isLookupMode:', state.isLookupMode);
     
-    // Handle spacebar press when prompt is empty to trigger lookup mode (only if licensed)
-    if (e.key === ' ' && state.prompt === '' && !state.isLookupMode && state.isLicensed) {
+    // Handle spacebar press when prompt is empty to trigger lookup mode (available to all users)
+    if (e.key === ' ' && state.prompt === '' && !state.isLookupMode) {
       console.log('🔍 Spacebar pressed - triggering lookup mode');
       e.preventDefault(); // Prevent space from being added to textarea
       
@@ -1235,8 +1235,8 @@ export const App = () => {
       return;
     }
     
-    // Arrow key navigation in lookup mode - prevent default cursor movement (only if licensed)
-    if (state.isLicensed && state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0) {
+    // Arrow key navigation in lookup mode - prevent default cursor movement (available to all users)
+    if (state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         console.log(`🔼 Arrow ${e.key} pressed - current index: ${state.selectedDropdownIndex}, total files: ${state.filteredSFXFiles.length}`);
         e.preventDefault(); // Prevent text cursor movement
@@ -1271,12 +1271,19 @@ export const App = () => {
       }
       
       if (state.isLookupMode && state.selectedDropdownIndex >= 0 && state.filteredSFXFiles.length > 0) {
-        // Select currently highlighted result
+        // Select currently highlighted result (requires license for actual placement)
         console.log('📁 Selecting SFX file:', state.filteredSFXFiles[state.selectedDropdownIndex]);
-        handleSFXFileSelect(state.filteredSFXFiles[state.selectedDropdownIndex]);
+        if (state.isLicensed) {
+          handleSFXFileSelect(state.filteredSFXFiles[state.selectedDropdownIndex]);
+        } else {
+          errorManager.warning('License required to place SFX files in timeline');
+        }
       } else if (state.isLicensed) {
         console.log('🎵 Calling handleGenerate with prompt:', `"${state.prompt}"`);
         handleGenerate();
+      } else {
+        // Show license requirement message for generation
+        errorManager.warning('License required for SFX generation');
       }
     } else if (e.key === 'Escape') {
       // Exit lookup mode
