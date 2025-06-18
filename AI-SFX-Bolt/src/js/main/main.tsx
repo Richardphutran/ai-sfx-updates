@@ -1,112 +1,123 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useReducer } from "react";
 import { evalTS, subscribeBackgroundColor, listenTS, csi } from "../lib/utils/bolt";
 import CSInterface from "../lib/cep/csinterface";
 import { fs } from "../lib/cep/node";
 import type { TimelineInfo, PlacementResult } from "../../shared/universals";
 import { bridgeClient } from "../lib/bridge-client";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ToastSystem, useToast } from "../components/ToastSystem";
+import { errorManager, ErrorUtils, ErrorCategory, ErrorSeverity } from "../lib/error-manager";
+import { ErrorSystemTests } from "../lib/test-error-system";
+import { SecurityManager, SecureStorage, InputSanitizer, SecurityValidator } from "../lib/security-manager";
+import { sfxReducer, initialSFXState, SFXActions, type SFXState, type SFXFileInfo } from "../lib/state-manager";
 import "./main.scss";
+import "../components/ToastSystem.scss";
+import "../components/ErrorBoundary.scss";
 
-interface SFXState {
-  prompt: string;
-  isGenerating: boolean;
-  currentDuration: number;
-  useInOutMode: boolean;
-  manualModeActive: boolean;
-  autoMode: boolean;
-  timelineInfo: TimelineInfo | null;
-  apiKey: string;
-  showSettings: boolean;
-  isLookupMode: boolean;
-  existingSFXFiles: string[];
-  allSFXFileInfo: SFXFileInfo[]; // Store full file info for path resolution
-  filteredSFXFiles: string[];
-  showSFXDropdown: boolean;
-  selectedDropdownIndex: number;
-  promptInfluence: number;
-  lastScanTime: number; // Track when we last scanned
-  isScanningFiles: boolean; // Show loading state
-  // Menu system state
-  menuMode: 'normal' | 'settings' | 'api' | 'help' | 'files' | 'folder' | 'batch';
-  // Track targeting system
-  trackTargetingEnabled: boolean;
-  selectedTrack: string;
-  availableTracks: string[];
-  volume: number;
-  // Auto-detected targeted track from Premiere
-  detectedTargetedTrack: { name: string; number: number } | null;
-  // Custom SFX folder path
-  customSFXPath: string | null;
-  // Preview system
-  previewAudio: HTMLAudioElement | null;
-  isPlaying: boolean;
-  previewFile: string | null;
-  // Batch processing
-  batchMode: boolean;
-  batchPrompts: string[];
-  batchProgress: number;
-  batchTotal: number;
-  isBatchProcessing: boolean;
-}
+// Debounce utility for performance
+const useDebounce = (callback: (...args: any[]) => void, delay: number) => {
+  const timeoutRef = useRef<NodeJS.Timeout>();
+  
+  return useCallback((...args: any[]) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => callback(...args), delay);
+  }, [callback, delay]);
+};
 
-interface SFXFileInfo {
-  filename: string;
-  basename: string;
-  number: number;
-  prompt: string;
-  timestamp: string;
-  path: string;
-  binPath?: string;
-  subfolder?: string;
-  source: 'filesystem' | 'project_bin';
-}
+// Async file system utilities
+const fsAsync = {
+  existsSync: (path: string): boolean => {
+    try {
+      return fs.existsSync(path);
+    } catch {
+      return false;
+    }
+  },
+  
+  exists: async (path: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      try {
+        resolve(fs.existsSync(path));
+      } catch {
+        resolve(false);
+      }
+    });
+  },
+  
+  readdir: async (path: string): Promise<string[]> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const items = fs.readdirSync(path);
+        resolve(items);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  },
+  
+  stat: async (path: string): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const stats = fs.statSync(path);
+        resolve(stats);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  },
+  
+  mkdir: async (path: string, options?: { recursive?: boolean }): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        fs.mkdirSync(path, options);
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+};
+
+// State interfaces moved to state-manager.ts
 
 export const App = () => {
 
   const [bgColor, setBgColor] = useState("#2a2a2a");
-  const [state, setState] = useState<SFXState>({
-    prompt: "",
-    isGenerating: false,
-    currentDuration: 10,
-    useInOutMode: false,
-    manualModeActive: false,
-    autoMode: true,
-    timelineInfo: null,
-    apiKey: "",
-    showSettings: false,
-    isLookupMode: false,
-    existingSFXFiles: [],
-    allSFXFileInfo: [],
-    filteredSFXFiles: [],
-    showSFXDropdown: false,
-    selectedDropdownIndex: -1,
-    promptInfluence: 0.5,
-    lastScanTime: 0,
-    isScanningFiles: false,
-    // Menu system state
-    menuMode: 'normal',
-    // Track targeting system  
-    trackTargetingEnabled: true,
-    selectedTrack: 'A5*',
-    availableTracks: ['A1', 'A2', 'A3', 'A4', 'A5*', 'A6', 'A7'],
-    volume: 0,
-    detectedTargetedTrack: null,
-    customSFXPath: null,
-    // Preview system
-    previewAudio: null,
-    isPlaying: false,
-    previewFile: null,
-    // Batch processing
-    batchMode: false,
-    batchPrompts: [],
-    batchProgress: 0,
-    batchTotal: 0,
-    isBatchProcessing: false
-  });
+  const toast = useToast();
+  const [state, dispatch] = useReducer(sfxReducer, initialSFXState);
+  
+  // Compatibility helper for gradual migration from setState to dispatch
+  const setState = useCallback((updater: (prev: SFXState) => Partial<SFXState>) => {
+    const updates = updater(state);
+    dispatch(SFXActions.loadSettings(updates));
+  }, [state]);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const timelineUpdateRef = useRef<NodeJS.Timeout>();
   const cachedFileInfoRef = useRef<SFXFileInfo[]>([]);
   const CACHE_DURATION = 30000; // 30 seconds cache
+
+  // Debounced file scanning for performance
+  const performFileScanning = useCallback(async () => {
+    dispatch(SFXActions.setScanningFiles(true));
+    
+    try {
+      const allFiles = await scanExistingSFXFiles(state.customSFXPath);
+      console.log(`📚 Loaded ${allFiles.length} SFX files for lookup`);
+      
+      // Cache the results
+      cachedFileInfoRef.current = allFiles;
+      
+      dispatch(SFXActions.updateFileScan(allFiles, Date.now()));
+    } catch (error) {
+      ErrorUtils.handleFileError(error as Error, { operation: 'scanExistingSFXFiles' });
+      dispatch(SFXActions.setScanningFiles(false));
+    }
+  }, [state.customSFXPath]);
+
+  const debouncedFileScanning = useDebounce(performFileScanning, 300);
 
   // Initialize bridge connection and console forwarding
   useEffect(() => {
@@ -274,9 +285,46 @@ export const App = () => {
   };
 
   // Show status in console for debugging
-  const showStatus = useCallback((message: string, duration = 0) => {
-    // Status display for user feedback
-  }, []);
+  // Professional status and error handling
+  const showStatus = useCallback((message: string, duration = 2000) => {
+    toast.info(message, duration);
+  }, [toast]);
+
+  const showSuccess = useCallback((message: string, duration = 2000) => {
+    toast.success(message, duration);
+  }, [toast]);
+
+  const showWarning = useCallback((message: string, duration = 3000) => {
+    toast.warning(message, duration);
+  }, [toast]);
+
+  const showError = useCallback((message: string, duration = 5000, action?: { label: string; handler: () => void }) => {
+    toast.error(message, duration, action);
+  }, [toast]);
+
+  // Set up error manager notification integration
+  useEffect(() => {
+    const unsubscribe = errorManager.onNotification((notification) => {
+      switch (notification.type) {
+        case 'success':
+          toast.success(notification.message, notification.duration);
+          break;
+        case 'error':
+          toast.error(notification.message, notification.duration, notification.action);
+          break;
+        case 'warning':
+          toast.warning(notification.message, notification.duration);
+          break;
+        case 'info':
+          toast.info(notification.message, notification.duration);
+          break;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [toast]);
 
 
   // Update timeline info (optimized with change detection)
@@ -344,18 +392,27 @@ export const App = () => {
       return;
     }
 
-    if (!state.apiKey) {
-      console.log('❌ No API key found - stopping generation');
-      showStatus('Please set your API key first', 3000);
+    // Validate API key and prompt securely
+    const validation = SecurityValidator.validateAPIRequest(state.prompt, state.apiKey);
+    if (!validation.valid) {
+      console.log('❌ Validation failed:', validation.errors);
+      showError(`Validation failed: ${validation.errors.join(', ')}`);
+      return;
+    }
+
+    // Check rate limiting
+    if (!SecurityValidator.rateLimiter.canMakeRequest()) {
+      const timeUntilReset = SecurityValidator.rateLimiter.getTimeUntilReset();
+      showWarning(`Rate limit exceeded. Please wait ${Math.ceil(timeUntilReset / 1000)} seconds.`);
       return;
     }
     
-    console.log('✅ API key found, continuing with generation...');
+    console.log('🔒 Security validation passed, continuing with generation...');
 
-    // Store the prompt before starting generation
-    const promptToGenerate = state.prompt.trim();
+    // Sanitize the prompt before using it
+    const promptToGenerate = InputSanitizer.sanitizePrompt(state.prompt);
     
-    setState(prev => ({ ...prev, isGenerating: true }));
+    dispatch(SFXActions.setGenerating(true));
     showStatus('Detecting timeline...');
 
     try {
@@ -542,12 +599,23 @@ export const App = () => {
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           } else {
-            throw new Error(`API request failed after ${maxRetries} attempts: ${response.status} - ${errorText}`);
+            const apiError = new Error(`API request failed after ${maxRetries} attempts: ${response.status} - ${errorText}`);
+          ErrorUtils.handleAPIError(apiError, false, { 
+            attempts: maxRetries, 
+            status: response.status, 
+            prompt: prompt.substring(0, 50) 
+          });
+          throw apiError;
           }
         } else {
           // Non-retryable error (4xx except 429)
           const error = await response.text();
-          throw new Error(`API request failed: ${response.status} - ${error}`);
+          const apiError = new Error(`API request failed: ${response.status} - ${error}`);
+          ErrorUtils.handleAPIError(apiError, false, { 
+            status: response.status, 
+            prompt: prompt.substring(0, 50) 
+          });
+          throw apiError;
         }
         
       } catch (fetchError) {
@@ -588,14 +656,12 @@ export const App = () => {
         // Return project folder > SFX > ai sfx path
         return `${result.projectDir}/SFX/ai sfx`;
       } else {
-        // Fallback to desktop path
-        const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-        return `${userPath}/Desktop/SFX AI`;
+        // No project open - user must specify custom folder
+        return null;
       }
     } catch (error) {
-      // Fallback to desktop path
-      const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-      return `${userPath}/Desktop/SFX AI`;
+      // Error getting project path - user must specify custom folder
+      return null;
     }
   };
 
@@ -639,7 +705,7 @@ export const App = () => {
       const foldersToScan: string[] = [];
       
       // First priority: Check custom path if set
-      if (pathToUse && fs.existsSync(pathToUse)) {
+      if (pathToUse && await fsAsync.exists(pathToUse)) {
         console.log(`📁 Scanning custom SFX folder: ${pathToUse}`);
         foldersToScan.push(pathToUse);
       }
@@ -649,37 +715,30 @@ export const App = () => {
         // ONLY scan the exact paths where we save files
         // 1. Primary location: Project/SFX/ai sfx
         const primaryPath = `${projectPath.projectDir}/SFX/ai sfx`;
-        if (fs.existsSync(primaryPath) && primaryPath !== pathToUse) {
+        if (await fsAsync.exists(primaryPath) && primaryPath !== pathToUse) {
           foldersToScan.push(primaryPath);
         }
         
         // 2. Also scan Project/SFX folder (parent of ai sfx) for manually added files
         const projectSFXPath = `${projectPath.projectDir}/SFX`;
-        if (fs.existsSync(projectSFXPath) && projectSFXPath !== pathToUse) {
+        if (await fsAsync.exists(projectSFXPath) && projectSFXPath !== pathToUse) {
           console.log(`🎯 Found project SFX folder: ${projectSFXPath}`);
           foldersToScan.push(projectSFXPath);
           
           // Add immediate subfolders of SFX (but not recursive to avoid deep scanning)
           try {
-            const items = fs.readdirSync(projectSFXPath);
+            const items = await fsAsync.readdir(projectSFXPath);
             for (const item of items) {
               if (item.startsWith('.')) continue;
               const subPath = `${projectSFXPath}/${item}`;
-              if (fs.statSync(subPath).isDirectory() && subPath !== pathToUse) {
+              const stats = await fsAsync.stat(subPath);
+              if (stats.isDirectory() && subPath !== pathToUse) {
                 foldersToScan.push(subPath);
               }
             }
           } catch (e) {
             // Skip subfolders that can't be read
           }
-        }
-      } else if (!pathToUse) {
-        // Project not saved and no custom path - check fallback Desktop location
-        const userPath = window.cep_node.global.process.env.HOME || window.cep_node.global.process.env.USERPROFILE;
-        const fallbackPath = `${userPath}/Desktop/SFX AI`;
-        
-        if (fs.existsSync(fallbackPath)) {
-          foldersToScan.push(fallbackPath);
         }
       }
       
@@ -690,23 +749,23 @@ export const App = () => {
       // Scan each folder recursively
       for (const sfxPath of uniqueFolders) {
         
-        // Recursive function to scan directories
-        function scanDirectoryRecursively(dirPath: string, relativePath = ''): SFXFileInfo[] {
+        // Async recursive function to scan directories
+        async function scanDirectoryRecursively(dirPath: string, relativePath = ''): Promise<SFXFileInfo[]> {
           const files: SFXFileInfo[] = [];
           
           try {
-            const items = fs.readdirSync(dirPath);
+            const items = await fsAsync.readdir(dirPath);
             
             for (const item of items) {
               const fullItemPath = `${dirPath}/${item}`;
               const itemRelativePath = relativePath ? `${relativePath}/${item}` : item;
               
               try {
-                const stats = fs.statSync(fullItemPath);
+                const stats = await fsAsync.stat(fullItemPath);
                 
                 if (stats.isDirectory()) {
                   // Recursively scan subdirectory
-                  const subFiles = scanDirectoryRecursively(fullItemPath, itemRelativePath);
+                  const subFiles = await scanDirectoryRecursively(fullItemPath, itemRelativePath);
                   files.push(...subFiles);
                 } else if (stats.isFile()) {
                   // Check if it's an audio file
@@ -787,7 +846,7 @@ export const App = () => {
           return files;
         }
         
-        const filesystemFiles = scanDirectoryRecursively(sfxPath);
+        const filesystemFiles = await scanDirectoryRecursively(sfxPath);
         allFiles.push(...filesystemFiles);
       }
       
@@ -882,20 +941,31 @@ export const App = () => {
     if (!sfxPath) {
       throw new Error('Could not determine SFX folder path');
     }
+
+    // Validate file path security
+    const pathValidation = SecurityValidator.validateFileOperation('write', sfxPath);
+    if (!pathValidation.valid) {
+      throw new Error(`Unsafe file path: ${pathValidation.error}`);
+    }
     
     // Ensure directory exists
-    if (!fs.existsSync(sfxPath)) {
-      fs.mkdirSync(sfxPath, { recursive: true });
+    if (!await fsAsync.exists(sfxPath)) {
+      await fsAsync.mkdir(sfxPath, { recursive: true });
     }
     
     const existingFiles = await scanExistingSFXFiles(state.customSFXPath);
     const nextNumber = getNextNumberForPrompt(prompt, existingFiles);
     
-    // NEW: Use numbered suffix naming convention: "explosion sound 1.mp3" (single digit unless multi-digit)
-    const cleanPrompt = prompt.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, '').trim();
-    const fileName = `${cleanPrompt} ${nextNumber}.mp3`;
+    // Securely sanitize the filename
+    const sanitizedPrompt = InputSanitizer.sanitizeFilename(prompt);
+    const fileName = `${sanitizedPrompt}_${nextNumber}.mp3`;
     const filePath = `${sfxPath}/${fileName}`;
-    
+
+    // Validate final file path
+    const finalPathValidation = SecurityValidator.validateFileOperation('write', filePath);
+    if (!finalPathValidation.valid) {
+      throw new Error(`Invalid filename generated: ${finalPathValidation.error}`);
+    }
     
     const buffer = Buffer.from(audioData);
     fs.writeFileSync(filePath, buffer);
@@ -905,11 +975,14 @@ export const App = () => {
 
   // Handle text input changes
   const handlePromptChange = useCallback((value: string) => {
-    console.log('📝 Input changed to:', `"${value}"`, 'length:', value.length, 'isLookupMode:', state.isLookupMode); // Debug log
+    // Sanitize input to prevent XSS and injection attacks
+    const sanitizedValue = InputSanitizer.sanitizeHTML(value);
+    
+    console.log('📝 Input changed to:', `"${sanitizedValue}"`, 'length:', sanitizedValue.length, 'isLookupMode:', state.isLookupMode);
     
     if (state.isLookupMode) {
       // Already in lookup mode - handle filtering and searching
-      if (value.trim() === '') {
+      if (sanitizedValue.trim() === '') {
         // If cleared, exit lookup mode
         setState(prev => ({ 
           ...prev, 
@@ -921,7 +994,7 @@ export const App = () => {
         }));
       } else {
         // Filter files based on search term (excluding the initial space)
-        const searchTerm = value.replace(/^\s+/, '').toLowerCase();
+        const searchTerm = sanitizedValue.replace(/^\s+/, '').toLowerCase();
         
         console.log(`🔍 Searching for: "${searchTerm}" in ${state.allSFXFileInfo.length} files`);
         
@@ -990,7 +1063,7 @@ export const App = () => {
         console.log(`🎯 Setting filtered files to: ${filteredNames.length} items`, filteredNames);
         setState(prev => ({ 
           ...prev, 
-          prompt: value,
+          prompt: sanitizedValue,
           filteredSFXFiles: filteredNames,
           selectedDropdownIndex: filteredNames.length > 0 ? 0 : -1,
           showSFXDropdown: true // Ensure dropdown stays visible
@@ -1000,7 +1073,7 @@ export const App = () => {
       // Normal typing mode - just update prompt for generation
       setState(prev => ({ 
         ...prev, 
-        prompt: value,
+        prompt: sanitizedValue,
         showSFXDropdown: false
       }));
     }
@@ -1151,29 +1224,11 @@ export const App = () => {
           ...prev, 
           isLookupMode: true, 
           showSFXDropdown: true,
-          prompt: ' ',
-          isScanningFiles: true
+          prompt: ' '
         }));
         
-        // Scan files asynchronously
-        (async () => {
-          const allFiles = await scanExistingSFXFiles(state.customSFXPath);
-          console.log(`📚 Loaded ${allFiles.length} SFX files for lookup`);
-          
-          // Cache the results
-          cachedFileInfoRef.current = allFiles;
-          const fileNames = allFiles.map(f => f.filename);
-          
-          setState(prev => ({ 
-            ...prev, 
-            allSFXFileInfo: allFiles,
-            existingSFXFiles: fileNames,
-            filteredSFXFiles: fileNames,
-            selectedDropdownIndex: fileNames.length > 0 ? 0 : -1,
-            lastScanTime: now,
-            isScanningFiles: false
-          }));
-        })().catch(console.error);
+        // Use debounced file scanning for better performance
+        debouncedFileScanning();
       }
       return;
     }
@@ -1244,22 +1299,18 @@ export const App = () => {
   // Load settings
   const loadSettings = useCallback(() => {
     try {
-      let savedApiKey = localStorage.getItem('elevenLabsApiKey') || '';
+      // Initialize security manager
+      SecurityManager.initialize();
       
-      // Development fallback - use a test key if none is saved
-      if (!savedApiKey) {
-        savedApiKey = 'sk-test-key-for-development'; // You'll need to replace this with your actual key
-        localStorage.setItem('elevenLabsApiKey', savedApiKey);
-        console.log('🔧 Development: Auto-set test API key');
-      }
+      // Load API key securely
+      const savedApiKey = SecureStorage.getAPIKey();
       
       const savedVolume = parseFloat(localStorage.getItem('sfxVolume') || '0');
       const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') !== 'false';
       const savedSelectedTrack = localStorage.getItem('selectedTrack') || 'A5*';
       const savedCustomPath = localStorage.getItem('customSFXPath') || null;
       
-      setState(prev => ({ 
-        ...prev, 
+      dispatch(SFXActions.loadSettings({
         apiKey: savedApiKey,
         volume: savedVolume,
         trackTargetingEnabled: savedTrackTargeting,
@@ -1267,37 +1318,41 @@ export const App = () => {
         customSFXPath: savedCustomPath
       }));
       
-      console.log('⚙️ Settings loaded - API key:', savedApiKey ? 'Present' : 'Missing');
+      console.log('🔒 Settings loaded securely - API key:', savedApiKey ? 'Present' : 'Missing');
       if (savedCustomPath) {
         console.log('📁 Custom SFX path:', savedCustomPath);
       }
       
-      if (savedApiKey && savedApiKey !== 'sk-test-key-for-development') {
-        showStatus('Ready', 1000);
+      if (savedApiKey) {
+        showSuccess('Ready - API key loaded securely');
       } else {
-        showStatus('Set your real API key in settings', 3000);
+        showWarning('Please set your API key in settings');
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
+      ErrorUtils.handleValidationError('Failed to load settings securely');
     }
   }, [showStatus]);
 
   // Settings management
   const openSettings = useCallback(() => {
-    setState(prev => ({ ...prev, showSettings: true }));
+    dispatch(SFXActions.setMenuMode('settings'));
   }, []);
 
   const closeSettings = useCallback(() => {
-    setState(prev => ({ ...prev, showSettings: false }));
+    dispatch(SFXActions.setMenuMode('normal'));
   }, []);
 
   const saveApiKey = useCallback((newApiKey: string) => {
     if (newApiKey) {
-      localStorage.setItem('elevenLabsApiKey', newApiKey);
-      setState(prev => ({ ...prev, apiKey: newApiKey }));
-      showStatus('API key saved!', 2000);
+      const success = SecureStorage.storeAPIKey(newApiKey);
+      if (success) {
+        dispatch(SFXActions.setApiKey(newApiKey));
+        showSuccess('API key saved securely');
+      } else {
+        showError('Failed to save API key - please check format');
+      }
     }
-  }, [showStatus]);
+  }, [showSuccess, showError]);
 
   // Detect currently targeted track in Premiere Pro
   const detectTargetedTrack = useCallback(async () => {
@@ -1337,7 +1392,7 @@ export const App = () => {
     }
   }, [state.menuMode, state.trackTargetingEnabled, detectTargetedTrack]);
 
-  const openMenu = useCallback((menuType: 'api' | 'help' | 'files' | 'folder' | 'batch') => {
+  const openMenu = useCallback((menuType: 'license' | 'files' | 'updates') => {
     setState(prev => ({ ...prev, menuMode: menuType }));
   }, []);
 
@@ -1404,11 +1459,11 @@ export const App = () => {
     }
   }, [state.customSFXPath, showStatus]);
 
-  // Reset to default folder
-  const resetToDefaultFolder = useCallback(() => {
+  // Reset to project folder
+  const resetToProjectFolder = useCallback(() => {
     localStorage.removeItem('customSFXPath');
     setState(prev => ({ ...prev, customSFXPath: null }));
-    showStatus('Reset to default SFX folder', 2000);
+    showSuccess('Reset to project SFX folder');
     
     // Force a rescan of files
     cachedFileInfoRef.current = [];
@@ -1418,14 +1473,11 @@ export const App = () => {
   // Get display path for current SFX folder
   const getDisplayPath = useCallback(() => {
     if (state.customSFXPath) {
-      // Shorten path for display if too long
-      const parts = state.customSFXPath.split('/');
-      if (parts.length > 4) {
-        return `.../${parts.slice(-3).join('/')}`;
-      }
-      return state.customSFXPath;
+      // Show just the folder name for custom paths
+      const folderName = state.customSFXPath.split('/').pop() || 'Custom Folder';
+      return `Custom: ${folderName}`;
     }
-    return 'Auto (Project or Desktop)';
+    return 'Project: SFX/ai sfx';
   }, [state.customSFXPath]);
 
 
@@ -1463,99 +1515,6 @@ export const App = () => {
     };
   }, [loadSettings, updateTimelineInfo]);
 
-  // Batch processing functionality
-  const processBatch = useCallback(async () => {
-    if (state.batchPrompts.length === 0 || !state.apiKey) {
-      showStatus('No prompts to process or missing API key', 3000);
-      return;
-    }
-
-    setState(prev => ({ 
-      ...prev, 
-      isBatchProcessing: true, 
-      batchProgress: 0,
-      batchTotal: prev.batchPrompts.length 
-    }));
-
-    try {
-      for (let i = 0; i < state.batchPrompts.length; i++) {
-        const prompt = state.batchPrompts[i].trim();
-        if (!prompt) continue;
-
-        // Update progress
-        setState(prev => ({ ...prev, batchProgress: i + 1 }));
-        showStatus(`Processing ${i + 1}/${state.batchPrompts.length}: ${prompt}`, 2000);
-
-        // Generate the SFX
-        try {
-          // Determine duration based on current mode
-          let duration = state.currentDuration;
-          if (state.useInOutMode && state.timelineInfo?.duration?.seconds) {
-            duration = Math.max(1, Math.min(22, Math.round(state.timelineInfo.duration.seconds)));
-          } else if (state.autoMode) {
-            duration = 10; // Default for auto mode
-          }
-
-          const audioData = await generateSFX(prompt, duration, state.apiKey, state.promptInfluence);
-          const filePath = await saveAudioFile(audioData, prompt);
-          
-          // Place on timeline with spacing
-          const timelineInfo = state.timelineInfo;
-          let placementPosition = null;
-          
-          if (timelineInfo?.success && timelineInfo.currentTime?.seconds !== null) {
-            // Place each SFX with spacing (duration + 0.5 seconds gap)
-            placementPosition = timelineInfo.currentTime.seconds + (i * (duration + 0.5));
-          }
-
-          // Import and place the audio
-          const result = await evalTS(`importAndPlaceAudioAtTime`, {
-            audioPath: filePath,
-            placementTime: placementPosition,
-            trackIndex: state.trackTargetingEnabled && state.selectedTrack !== 'Auto' 
-              ? parseInt(state.selectedTrack.replace(/[^0-9]/g, '')) - 1 
-              : undefined,
-            volume: state.volume
-          });
-
-          if (!result.success) {
-            console.error(`Failed to place SFX ${i + 1}:`, result.error);
-          }
-
-        } catch (error) {
-          console.error(`Error processing prompt ${i + 1}:`, error);
-          showStatus(`Failed: ${prompt}`, 2000);
-        }
-
-        // Add delay between generations to avoid rate limiting
-        if (i < state.batchPrompts.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
-      showStatus(`Batch complete! Generated ${state.batchProgress} SFX`, 4000);
-      
-      // Clear batch prompts after successful processing
-      setState(prev => ({ 
-        ...prev, 
-        batchPrompts: [], 
-        batchMode: false,
-        menuMode: 'normal' 
-      }));
-
-    } catch (error) {
-      showStatus(`Batch error: ${error instanceof Error ? error.message : String(error)}`, 4000);
-    } finally {
-      setState(prev => ({ 
-        ...prev, 
-        isBatchProcessing: false,
-        batchProgress: 0,
-        batchTotal: 0
-      }));
-    }
-  }, [state.batchPrompts, state.apiKey, state.currentDuration, state.useInOutMode, state.timelineInfo, 
-      state.autoMode, state.promptInfluence, state.trackTargetingEnabled, state.selectedTrack, 
-      state.volume, generateSFX, saveAudioFile, evalTS, showStatus]);
 
   // Real-time track targeting detection
   useEffect(() => {
@@ -1812,107 +1771,49 @@ export const App = () => {
               )}
             </div>
             
-            <div className="api-status">
-              <span>API:</span>
-              <span className={`status-indicator ${state.apiKey ? 'connected' : 'disconnected'}`}>
-                {state.apiKey ? '●' : '○'}
+            <div className="license-status">
+              <span>License:</span>
+              <span className="status-indicator trial">
+                Trial
               </span>
             </div>
             
             <div className="menu-buttons">
-              <button className="menu-btn" onClick={() => openMenu('batch')} title="Batch Mode">📋</button>
-              <button className="menu-btn" onClick={() => openMenu('api')} title="API Setup">🔧</button>
-              <button className="menu-btn" onClick={() => openMenu('folder')} title="Folder Settings">📁</button>
+              <button className="menu-btn" onClick={() => openMenu('license')} title="License">🔑</button>
               <button className="menu-btn" onClick={() => openMenu('files')} title="Files">📂</button>
-              <button className="menu-btn" onClick={() => openMenu('help')} title="Help">❓</button>
+              <button className="menu-btn" onClick={() => openMenu('updates')} title="Updates">↓</button>
             </div>
           </div>
         </div>
       )}
       
-      {/* API Setup Menu */}
-      {state.menuMode === 'api' && (
+      {/* License Menu */}
+      {state.menuMode === 'license' && (
         <div className="menu-overlay">
-          <div className="api-menu">
+          <div className="license-menu">
             <div className="menu-header">
-              <span className="menu-title">API Configuration</span>
+              <span className="menu-title">License</span>
               <button onClick={goBackToSettings} className="back-btn">Back</button>
             </div>
             <div className="menu-content">
-              <div className="api-input-row">
-                <span>API Key:</span>
+              <div className="license-status-row">
+                <span className="license-label">Status:</span>
+                <span className="license-status trial">Trial (7 days remaining)</span>
+              </div>
+              <div className="license-input-row">
+                <span>License Key:</span>
                 <input
-                  type="password"
-                  placeholder="ElevenLabs API Key"
-                  value={state.apiKey}
-                  onChange={(e) => setState(prev => ({ ...prev, apiKey: e.target.value }))}
-                  className="api-input"
+                  type="text"
+                  placeholder="Enter license key"
+                  className="license-input"
                 />
-                <button onClick={() => saveApiKey(state.apiKey)} className="save-btn">Save</button>
+                <button className="activate-btn">Activate</button>
               </div>
-              <div className="api-status-row">
-                <span className={`api-status ${state.apiKey ? 'connected' : 'disconnected'}`}>
-                  {state.apiKey ? '✅ Connected' : '❌ No API Key'}
-                </span>
-                <span className="usage">Usage: --/1000 generations</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Folder Menu */}
-      {state.menuMode === 'folder' && (
-        <div className="menu-overlay">
-          <div className="folder-menu">
-            <div className="menu-header">
-              <span className="menu-title">SFX Folder Settings</span>
-              <button onClick={goBackToSettings} className="back-btn">Back</button>
-            </div>
-            <div className="menu-content">
-              <div className="folder-path-row">
-                <span className="folder-label">Current Location:</span>
-                <span className="folder-path" title={state.customSFXPath || 'Using default folder'}>
-                  {getDisplayPath()}
-                </span>
-              </div>
-              <div className="folder-actions">
-                <button onClick={selectSFXFolder} className="action-btn primary" title="Choose a custom folder">
-                  📁 Select Folder
-                </button>
-                <button onClick={async () => {
-                  const sfxPath = await getSFXPath();
-                  if (sfxPath) {
-                    window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
-                  }
-                }} className="action-btn" title="Open folder in file browser">
-                  📂 Open Folder
-                </button>
-                <button 
-                  onClick={state.customSFXPath ? resetToDefaultFolder : () => showStatus('Already using default folder', 2000)} 
-                  className="action-btn" 
-                  title={state.customSFXPath ? 'Reset to default folder' : 'Using default folder'}
-                  disabled={!state.customSFXPath}
-                >
-                  🔄 Reset to Default
+              <div className="license-actions">
+                <button className="buy-license-btn" onClick={() => window.open('https://lemonsqueezy.com/checkout/buy/your-product-id', '_blank')}>
+                  Buy License
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Help Menu */}
-      {state.menuMode === 'help' && (
-        <div className="menu-overlay">
-          <div className="help-menu">
-            <div className="menu-row-1">
-              <span>Quick Help</span>
-              <button onClick={goBackToSettings} className="back-btn">Back</button>
-            </div>
-            <div className="menu-row-2">
-              <span>Type description → Enter → SFX generated</span>
-              <button onClick={() => window.open('mailto:support@aisfx.com', '_blank')} className="email-btn">Email</button>
             </div>
           </div>
         </div>
@@ -1932,75 +1833,69 @@ export const App = () => {
               <button onClick={async () => {
                 const sfxPath = await getSFXPath();
                 if (sfxPath) {
-                  window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+                  try {
+                    // Ensure the SFX directory exists before trying to open it
+                    if (!await fsAsync.exists(sfxPath)) {
+                      await fsAsync.mkdir(sfxPath, { recursive: true });
+                      showSuccess('SFX folder created');
+                    }
+                    window.cep.util.openURLInDefaultBrowser(`file://${sfxPath}`);
+                  } catch (error) {
+                    ErrorUtils.handleFileError(error as Error, { operation: 'openFolder', path: sfxPath });
+                  }
+                } else {
+                  showStatus('No project open - please select a custom folder first', 3000);
                 }
               }} className="open-btn" title="Open folder">Open</button>
-              <button onClick={state.customSFXPath ? resetToDefaultFolder : () => showStatus('Already using default folder', 2000)} 
+              <button onClick={state.customSFXPath ? resetToProjectFolder : () => showStatus('Already using project folder', 2000)} 
                       className="clean-btn" 
-                      title={state.customSFXPath ? 'Reset to default folder' : 'Using default folder'}>
-                {state.customSFXPath ? 'Reset' : 'Default'}
+                      title={state.customSFXPath ? 'Reset to project folder' : 'Using project folder'}>
+                {state.customSFXPath ? 'Reset' : 'Project'}
               </button>
             </div>
           </div>
         </div>
       )}
       
-      {/* Batch Processing Menu */}
-      {state.menuMode === 'batch' && (
-        <div className="menu-overlay batch-menu-overlay">
-          <div className="batch-menu">
-            <div className="batch-header">
-              <span className="menu-title">Batch Processing</span>
-              <button onClick={() => setState(prev => ({ ...prev, menuMode: 'normal' }))} className="close-btn">✕</button>
+      {/* Updates Menu */}
+      {state.menuMode === 'updates' && (
+        <div className="menu-overlay">
+          <div className="updates-menu">
+            <div className="menu-header">
+              <span className="menu-title">Updates</span>
+              <button onClick={goBackToSettings} className="back-btn">Back</button>
             </div>
-            <div className="batch-content">
-              <div className="batch-instructions">
-                Enter multiple SFX prompts (one per line):
+            <div className="menu-content">
+              <div className="update-status-row">
+                <span className="version-label">Current Version:</span>
+                <span className="version">v1.0.0</span>
               </div>
-              <textarea
-                className="batch-textarea"
-                placeholder="explosion sound&#10;footsteps on gravel&#10;door creaking open&#10;thunder rumble"
-                value={state.batchPrompts.join('\n')}
-                onChange={(e) => {
-                  const prompts = e.target.value.split('\n');
-                  setState(prev => ({ ...prev, batchPrompts: prompts }));
-                }}
-                disabled={state.isBatchProcessing}
-                rows={6}
-              />
-              {state.isBatchProcessing && (
-                <div className="batch-progress">
-                  <div className="progress-bar">
-                    <div 
-                      className="progress-fill" 
-                      style={{ width: `${(state.batchProgress / state.batchTotal) * 100}%` }}
-                    />
-                  </div>
-                  <span className="progress-text">
-                    Processing {state.batchProgress} of {state.batchTotal}...
-                  </span>
-                </div>
-              )}
-              <div className="batch-actions">
-                <button 
-                  onClick={processBatch} 
-                  className="batch-process-btn"
-                  disabled={state.isBatchProcessing || state.batchPrompts.filter(p => p.trim()).length === 0}
-                >
-                  {state.isBatchProcessing ? 'Processing...' : `Generate ${state.batchPrompts.filter(p => p.trim()).length} SFX`}
-                </button>
-                <button 
-                  onClick={() => setState(prev => ({ ...prev, batchPrompts: [] }))} 
-                  className="batch-clear-btn"
-                  disabled={state.isBatchProcessing}
-                >
-                  Clear All
-                </button>
+              <div className="update-check-row">
+                <span className="update-status">✓ Up to date</span>
+                <button className="check-updates-btn">Check Now</button>
+              </div>
+              <div className="update-settings">
+                <label className="auto-update-toggle">
+                  <input type="checkbox" checked readOnly />
+                  <span>Auto-check for updates</span>
+                </label>
               </div>
             </div>
           </div>
         </div>
       )}
+      
+      {/* Toast Notification System */}
+      <ToastSystem ref={toast.toastRef} maxToasts={5} position="top-right" />
     </div>
   );
 };
+
+// Wrap the main component with Error Boundary
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}

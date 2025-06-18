@@ -914,7 +914,7 @@ input[type="text"], textarea {
   font-size: 10px;
 }
 
-.volume-control, .track-control, .api-status {
+.volume-control, .track-control {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1043,7 +1043,7 @@ input[type="text"], textarea {
 }
 
 /* Menu Screens */
-.api-menu, .help-menu, .files-menu, .folder-menu {
+.files-menu, .license-menu, .updates-menu {
   padding: var(--space-sm) var(--space-md);
   height: 100%;
   display: flex;
@@ -1051,167 +1051,6 @@ input[type="text"], textarea {
   gap: var(--space-sm);
 }
 
-/* Batch Processing Menu */
-.batch-menu-overlay {
-  height: auto;
-  max-height: 80%;
-  bottom: 10px;
-}
-
-.batch-menu {
-  padding: var(--space-md);
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  
-  .batch-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: var(--space-sm);
-    border-bottom: 1px solid var(--border-color);
-    
-    .menu-title {
-      font-size: var(--font-md);
-      font-weight: 600;
-      color: var(--text-white);
-    }
-    
-    .close-btn {
-      background: none;
-      border: none;
-      color: var(--text-inactive);
-      font-size: var(--font-lg);
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: var(--radius-sm);
-      transition: all 0.2s ease;
-      
-      &:hover {
-        background: rgba(255, 255, 255, 0.1);
-        color: var(--text-white);
-      }
-    }
-  }
-  
-  .batch-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    
-    .batch-instructions {
-      font-size: var(--font-sm);
-      color: var(--text-inactive);
-    }
-    
-    .batch-textarea {
-      flex: 1;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
-      color: var(--text-white);
-      padding: var(--space-sm);
-      font-size: var(--font-sm);
-      resize: none;
-      outline: none;
-      font-family: inherit;
-      
-      &:focus {
-        border-color: var(--primary-blue);
-        box-shadow: 0 0 0 2px rgba(0, 153, 255, 0.2);
-      }
-      
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-    }
-    
-    .batch-progress {
-      padding: var(--space-sm);
-      background: rgba(0, 153, 255, 0.1);
-      border-radius: var(--radius-md);
-      
-      .progress-bar {
-        height: 4px;
-        background: var(--bg-secondary);
-        border-radius: 2px;
-        overflow: hidden;
-        margin-bottom: var(--space-xs);
-        
-        .progress-fill {
-          height: 100%;
-          background: var(--primary-blue);
-          transition: width 0.3s ease;
-        }
-      }
-      
-      .progress-text {
-        font-size: var(--font-xs);
-        color: var(--text-active);
-        display: block;
-        text-align: center;
-      }
-    }
-    
-    .batch-actions {
-      display: flex;
-      gap: var(--space-sm);
-      
-      .batch-process-btn {
-        flex: 1;
-        background: linear-gradient(to bottom, var(--primary-blue), var(--primary-blue-dark));
-        border: none;
-        color: var(--text-white);
-        padding: var(--space-sm) var(--space-md);
-        border-radius: var(--radius-md);
-        font-size: var(--font-sm);
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        
-        &:hover:not(:disabled) {
-          background: linear-gradient(to bottom, var(--primary-blue-light), var(--primary-blue));
-          transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(0, 153, 255, 0.3);
-        }
-        
-        &:active:not(:disabled) {
-          transform: translateY(0);
-        }
-        
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      }
-      
-      .batch-clear-btn {
-        background: transparent;
-        border: 1px solid var(--border-color);
-        color: var(--text-inactive);
-        padding: var(--space-sm) var(--space-md);
-        border-radius: var(--radius-md);
-        font-size: var(--font-sm);
-        cursor: pointer;
-        transition: all 0.2s ease;
-        
-        &:hover:not(:disabled) {
-          border-color: var(--error-red);
-          color: var(--error-red);
-          background: rgba(255, 68, 68, 0.1);
-        }
-        
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      }
-    }
-  }
-}
 
 .menu-header {
   display: flex;
@@ -1252,74 +1091,8 @@ input[type="text"], textarea {
   color: var(--text-dim);
 }
 
-.api-input {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-active);
-  font-size: 10px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  flex: 1;
-  min-width: 200px;
-  
-  &::placeholder {
-    color: var(--text-dim);
-  }
-}
 
-/* API Menu Specific */
-.api-input-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  
-  span {
-    font-size: 10px;
-    color: var(--text-active);
-    min-width: 60px;
-  }
-}
 
-.api-status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--border-color);
-}
-
-/* Folder Menu Specific */
-.folder-path-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  
-  .folder-label {
-    font-size: 10px;
-    color: var(--text-dim);
-  }
-  
-  .folder-path {
-    font-size: 10px;
-    color: var(--text-active);
-    font-family: monospace;
-    background: var(--bg-secondary);
-    padding: 4px 8px;
-    border-radius: 4px;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-.folder-actions {
-  display: flex;
-  gap: var(--space-sm);
-  justify-content: center;
-  flex-wrap: wrap;
-}
 
 .test-btn, .back-btn, .change-btn, .open-btn, .clean-btn, .email-btn, .save-btn, .action-btn {
   background: var(--bg-secondary);
@@ -1365,28 +1138,7 @@ input[type="text"], textarea {
   margin-left: auto;
 }
 
-.folder-btn {
-  background: none;
-  border: none;
-  color: var(--text-active);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px;
-  
-  &:hover {
-    color: var(--primary-blue);
-  }
-}
 
-.api-status {
-  &.connected {
-    color: var(--success-green);
-  }
-  
-  &.disconnected {
-    color: var(--text-dim);
-  }
-}
 
 /* Compact 525px width optimizations */
 @media (max-width: 525px) {
@@ -1410,8 +1162,4 @@ input[type="text"], textarea {
     font-size: 12px;
   }
   
-  .api-input {
-    min-width: 150px;
-    font-size: 9px;
-  }
 }
