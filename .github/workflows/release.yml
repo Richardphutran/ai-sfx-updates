@@ -1,0 +1,69 @@
+name: Build and Release ZXP
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on version tags like v1.0.0, v1.1.0, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Create ZXP package
+      run: npm run zxp
+      
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: AI SFX Generator ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## AI SFX Generator ${{ steps.get_version.outputs.VERSION }}
+          
+          ### 🆕 What's New
+          - Enhanced License Management with deactivation support
+          - SFX Placement control (AI SFX bin vs Active bin)  
+          - Project bin scanning for imported audio files
+          - Professional GitHub-based update system
+          
+          ### 🔧 Installation
+          1. Download the .zxp file below
+          2. Close Premiere Pro if running
+          3. Double-click the .zxp file to install via Adobe Extension Manager
+          4. Restart Premiere Pro
+          
+          ### 🎯 Requirements
+          **Compatible with**: Adobe Premiere Pro 2020-2025
+          **Built with**: Bolt CEP Framework
+          
+          ---
+          🔒 **Secure Updates**: Only licensed users can access future updates
+        files: "dist/zxp/*.zxp"
+        generate_release_notes: false
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

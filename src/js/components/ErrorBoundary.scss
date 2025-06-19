@@ -1,0 +1,217 @@
+/**
+ * Error Boundary styles - Professional error recovery UI
+ */
+
+.error-boundary {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.error-boundary__container {
+  background: var(--bg-primary, #2d2d2d);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 8px 24px rgba(0, 0, 0, 0.4);
+  text-align: center;
+  animation: errorBoundarySlideIn 0.3s ease-out;
+}
+
+.error-boundary__icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+
+.error-boundary__title {
+  color: var(--text-white, #ffffff);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  letter-spacing: -0.5px;
+}
+
+.error-boundary__message {
+  color: var(--text-inactive, #999);
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 24px 0;
+}
+
+.error-boundary__details {
+  background: var(--bg-secondary, #3a3a3a);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 0 0 24px 0;
+  text-align: left;
+  
+  p {
+    color: var(--text-active, #ccc);
+    font-size: 14px;
+    margin: 0 0 8px 0;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    word-break: break-all;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  strong {
+    color: var(--text-white, #ffffff);
+  }
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.error-boundary__btn {
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  &--primary {
+    background: linear-gradient(to bottom, var(--primary-blue, #0099ff), var(--primary-blue-dark, #0077cc));
+    color: var(--text-white, #ffffff);
+    
+    &:hover {
+      background: linear-gradient(to bottom, var(--primary-blue-light, #33aaff), var(--primary-blue, #0099ff));
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 153, 255, 0.3);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+  }
+  
+  &--secondary {
+    background: var(--bg-secondary, #3a3a3a);
+    border: 1px solid var(--border-color, #444);
+    color: var(--text-active, #ccc);
+    
+    &:hover {
+      background: var(--bg-primary, #2d2d2d);
+      color: var(--text-white, #ffffff);
+      border-color: var(--text-inactive, #999);
+      transform: translateY(-2px);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+  }
+}
+
+.error-boundary__stack {
+  text-align: left;
+  
+  summary {
+    color: var(--text-inactive, #999);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px 0;
+    border-top: 1px solid var(--border-color, #444);
+    margin-top: 16px;
+    
+    &:hover {
+      color: var(--text-active, #ccc);
+    }
+  }
+}
+
+.error-boundary__stack-trace {
+  background: var(--bg-secondary, #3a3a3a);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0 0 0;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-active, #ccc);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Animations */
+@keyframes errorBoundarySlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+  .error-boundary {
+    padding: 16px;
+  }
+  
+  .error-boundary__container {
+    padding: 24px 20px;
+  }
+  
+  .error-boundary__title {
+    font-size: 20px;
+  }
+  
+  .error-boundary__message {
+    font-size: 14px;
+  }
+  
+  .error-boundary__actions {
+    flex-direction: column;
+  }
+  
+  .error-boundary__btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .error-boundary__container {
+    border-width: 2px;
+    box-shadow: 
+      0 8px 32px rgba(255, 255, 255, 0.1),
+      0 4px 16px rgba(255, 255, 255, 0.05);
+  }
+  
+  .error-boundary__btn {
+    border-width: 2px;
+  }
+}
