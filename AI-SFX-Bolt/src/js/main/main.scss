@@ -498,7 +498,7 @@ input[type="text"], textarea {
   /* Update Notification - Subtle and non-intrusive */
   .update-notification {
     margin-top: var(--space-xs);
-    text-align: center;
+    text-align: left;
     
     .update-status {
       font-size: 8px;

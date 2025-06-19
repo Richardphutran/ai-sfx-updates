@@ -2629,7 +2629,7 @@ export const App = () => {
               📥 Update available ({state.latestVersion}) - Click to download
             </span>
           ) : state.latestVersion && !state.updateAvailable ? (
-            <span className="update-status current">✓ Up to date ({state.latestVersion || 'v1.1.0'})</span>
+            <span className="update-status current">✓ Up to date ({state.latestVersion})</span>
           ) : localStorage.getItem('licenseKey') ? (
             <span 
               className="update-status check-link" 
@@ -2638,7 +2638,15 @@ export const App = () => {
             >
               Check for updates
             </span>
-          ) : null}
+          ) : (
+            <span 
+              className="update-status check-link"
+              onClick={() => checkForUpdates(true)}
+              title="Check for updates"
+            >
+              Update Ready
+            </span>
+          )}
         </div>
       </div>
 
