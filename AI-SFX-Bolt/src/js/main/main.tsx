@@ -1391,15 +1391,63 @@ export const App = () => {
     }
   }, [dispatch, showStatus, showSuccess, showError]);
 
+  // Download update function for one-click downloads
+  const downloadUpdate = useCallback(async () => {
+    if (!state.updateDownloadUrl) {
+      showError('No download URL available. Please check for updates first.');
+      return;
+    }
+
+    try {
+      dispatch(SFXActions.setDownloadingUpdate(true));
+      showStatus('Downloading update...', 2000);
+
+      // Create download link and trigger download
+      const link = document.createElement('a');
+      link.href = state.updateDownloadUrl;
+      link.download = `ai-sfx-generator-${state.latestVersion}.zxp`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Show success message and installation instructions
+      setTimeout(() => {
+        showSuccess(`✅ Downloaded ${state.latestVersion}! Check your Downloads folder.`, 5000);
+        
+        // Show installation guide
+        setTimeout(() => {
+          showStatus('📁 Installation: 1) Close Premiere Pro 2) Double-click .zxp file 3) Restart Premiere Pro', 8000);
+        }, 2000);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Download failed:', error);
+      showError('Download failed. Please try again or download manually from Updates menu.');
+    } finally {
+      dispatch(SFXActions.setDownloadingUpdate(false));
+    }
+  }, [state.updateDownloadUrl, state.latestVersion, dispatch, showStatus, showSuccess, showError]);
+
   // Auto-check for updates on startup if enabled
   useEffect(() => {
-    if (state.autoCheckUpdates) {
-      // Auto-check after 5 seconds to not interfere with startup
+    if (state.autoCheckUpdates && localStorage.getItem('licenseKey')) {
+      // Auto-check after 30 seconds to not interfere with startup workflow
       const timeoutId = setTimeout(() => {
-        checkForUpdates(false);
-      }, 5000);
+        checkForUpdates(false); // Silent check
+      }, 30000);
       
       return () => clearTimeout(timeoutId);
+    }
+  }, [state.autoCheckUpdates, checkForUpdates]);
+
+  // Periodic update checks (every 24 hours) if plugin stays open
+  useEffect(() => {
+    if (state.autoCheckUpdates && localStorage.getItem('licenseKey')) {
+      const intervalId = setInterval(() => {
+        checkForUpdates(false); // Silent background check
+      }, 24 * 60 * 60 * 1000); // 24 hours
+      
+      return () => clearInterval(intervalId);
     }
   }, [state.autoCheckUpdates, checkForUpdates]);
 
@@ -2566,6 +2614,31 @@ export const App = () => {
             className="influence-slider"
           />
           <span className="influence-value">{state.promptInfluence === 0 ? 'Low' : state.promptInfluence === 1 ? 'High' : state.promptInfluence.toFixed(1)}</span>
+        </div>
+        
+        {/* Update Notification - Small and subtle */}
+        <div className="update-notification">
+          {state.isCheckingUpdates ? (
+            <span className="update-status checking">⟳ Checking for updates...</span>
+          ) : state.updateAvailable && state.latestVersion ? (
+            <span 
+              className="update-status available" 
+              onClick={() => downloadUpdate()}
+              title={`Download ${state.latestVersion}`}
+            >
+              📥 Update available ({state.latestVersion}) - Click to download
+            </span>
+          ) : state.latestVersion && !state.updateAvailable ? (
+            <span className="update-status current">✓ Up to date ({state.latestVersion || 'v1.1.0'})</span>
+          ) : localStorage.getItem('licenseKey') ? (
+            <span 
+              className="update-status check-link" 
+              onClick={() => checkForUpdates(true)}
+              title="Check for updates"
+            >
+              Check for updates
+            </span>
+          ) : null}
         </div>
       </div>
 

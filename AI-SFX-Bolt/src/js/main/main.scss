@@ -494,6 +494,52 @@ input[type="text"], textarea {
       font-weight: 500;
     }
   }
+  
+  /* Update Notification - Subtle and non-intrusive */
+  .update-notification {
+    margin-top: var(--space-xs);
+    text-align: center;
+    
+    .update-status {
+      font-size: 8px;
+      font-weight: 400;
+      transition: all 0.2s ease;
+      line-height: 1.2;
+      
+      &.checking {
+        color: var(--text-inactive);
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      
+      &.available {
+        color: var(--primary-blue);
+        cursor: pointer;
+        text-decoration: none;
+        
+        &:hover {
+          color: var(--accent-green);
+          text-decoration: underline;
+        }
+      }
+      
+      &.current {
+        color: var(--text-inactive);
+        opacity: 0.7;
+      }
+      
+      &.check-link {
+        color: var(--text-inactive);
+        cursor: pointer;
+        text-decoration: none;
+        opacity: 0.6;
+        
+        &:hover {
+          color: var(--primary-blue);
+          opacity: 1;
+        }
+      }
+    }
+  }
 }
 
 /* Timeline Section */
@@ -783,6 +829,15 @@ input[type="text"], textarea {
   }
   100% {
     left: 200%;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

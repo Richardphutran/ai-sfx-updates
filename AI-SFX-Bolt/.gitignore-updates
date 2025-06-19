@@ -1,0 +1,37 @@
+# Development files - DO NOT include in updates repository
+/.claude/
+.claude-context.json
+CLAUDE.md
+SECURE_UPDATES_GUIDE.md
+UPDATES_GUIDE.md
+
+# Python development files
+*.py
+__pycache__/
+*.pyc
+
+# Development notes and docs
+*.md
+!README.md
+
+# Debug and temporary files
+debug/
+.tmp/
+temp/
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development dependencies and configs
+.eslintrc.*
+.prettierrc.*
+.env.local
+.env.development
