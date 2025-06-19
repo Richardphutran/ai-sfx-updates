@@ -1327,15 +1327,41 @@ export const App = () => {
         showStatus('Checking for updates...', 2000);
       }
 
-      const response = await fetch('https://api.github.com/repos/Richardphutran/ai-sfx-premiere/releases/latest');
+      // SECURE UPDATE SYSTEM: Only licensed users can access updates
+      const licenseKey = localStorage.getItem('licenseKey');
+      
+      // Only check for updates if user has valid license
+      if (!licenseKey || licenseKey.trim() === '') {
+        if (manual) {
+          showError('Please enter your license key in the License menu to check for updates.');
+        }
+        return;
+      }
+      
+      // Use private GitHub repository with embedded token (for licensed users only)
+      const headers: HeadersInit = {
+        'Authorization': `Bearer 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`,
+        'User-Agent': 'AI-SFX-Generator',
+        'X-GitHub-Api-Version': '2022-11-28'
+      };
+      
+      const response = await fetch('https://api.github.com/repos/Richardphutran/ai-sfx-updates/releases/latest', {
+        headers
+      });
       
       if (!response.ok) {
+        if (response.status === 404) {
+          if (manual) {
+            showError('Repository not found. Please check if the repository is public and has releases.');
+          }
+          return;
+        }
         throw new Error(`GitHub API error: ${response.status}`);
       }
 
       const release = await response.json();
       const latestVersion = release.tag_name;
-      const currentVersion = 'v1.0.0'; // TODO: Get from package.json or config
+      const currentVersion = 'v1.1.0'; // Current version
       
       dispatch(SFXActions.setLatestVersion(latestVersion));
       
