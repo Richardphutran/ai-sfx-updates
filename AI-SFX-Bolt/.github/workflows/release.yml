@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*' # Triggers on version tags like v1.0.0, v1.1.0, etc.
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,38 +35,35 @@ jobs:
       id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        tag_name: ${{ steps.get_version.outputs.VERSION }}
-        release_name: AI SFX Generator ${{ steps.get_version.outputs.VERSION }}
+        name: AI SFX Generator ${{ steps.get_version.outputs.VERSION }}
         body: |
           ## AI SFX Generator ${{ steps.get_version.outputs.VERSION }}
           
-          ### Installation
+          ### 🆕 What's New
+          - Enhanced License Management with deactivation support
+          - SFX Placement control (AI SFX bin vs Active bin)  
+          - Project bin scanning for imported audio files
+          - Professional GitHub-based update system
+          
+          ### 🔧 Installation
           1. Download the .zxp file below
           2. Close Premiere Pro if running
           3. Double-click the .zxp file to install via Adobe Extension Manager
           4. Restart Premiere Pro
           
-          ### What's New
-          See the commit history for detailed changes in this release.
-          
-          ---
+          ### 🎯 Requirements
           **Compatible with**: Adobe Premiere Pro 2020-2025
           **Built with**: Bolt CEP Framework
+          
+          ---
+          🔒 **Secure Updates**: Only licensed users can access future updates
+        files: "dist/zxp/*.zxp"
+        generate_release_notes: false
         draft: false
         prerelease: false
-        
-    - name: Upload ZXP Asset
-      uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/zxp/ai-sfx-generator.zxp
-        asset_name: ai-sfx-generator-${{ steps.get_version.outputs.VERSION }}.zxp
-        asset_content_type: application/zip
