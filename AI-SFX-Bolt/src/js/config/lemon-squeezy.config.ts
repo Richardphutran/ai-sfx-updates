@@ -22,14 +22,13 @@ export const LEMON_SQUEEZY_CONFIG = {
   
   // Development/testing license keys
   DEV_LICENSE_KEYS: {
-    'DEV_LICENSE_2024': 'sk_e638d6f29d8f974b24f07f391708f5fb87a6de2f51d892d6',
-    'DEMO_KEY_123': 'sk-your-elevenlabs-demo-key',
-    'TEST_OFFLINE_2024': 'sk-your-elevenlabs-test-key'
+    'DEV_LICENSE_2024': 'sk_3feb84d68528b48047bf6a7ab4bb5600db4d45511b1b9f22',
+    'DEMO_KEY_123': 'sk_3feb84d68528b48047bf6a7ab4bb5600db4d45511b1b9f22',
+    'TEST_OFFLINE_2024': 'sk_3feb84d68528b48047bf6a7ab4bb5600db4d45511b1b9f22'
   },
   
-  // Map valid license keys to ElevenLabs API keys
-  // This is where you map your customer's license to their ElevenLabs API key
-  PRODUCTION_API_KEY: 'sk_e638d6f29d8f974b24f07f391708f5fb87a6de2f51d892d6' // Your actual ElevenLabs API key
+  // Production ElevenLabs API key for validated licenses
+  PRODUCTION_API_KEY: 'sk_3feb84d68528b48047bf6a7ab4bb5600db4d45511b1b9f22'
 };
 
 /**

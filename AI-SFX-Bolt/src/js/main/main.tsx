@@ -5,19 +5,20 @@ import { fs } from "../lib/cep/node";
 import type { TimelineInfo, PlacementResult } from "../../shared/universals";
 import { bridgeClient } from "../lib/bridge-client";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { ToastSystem, useToast } from "../components/ToastSystem";
+// Removed ToastSystem for silent operation
 import { errorManager, ErrorUtils, ErrorCategory, ErrorSeverity } from "../lib/error-manager";
 import { ErrorSystemTests } from "../lib/test-error-system";
 import { SecurityManager, SecureStorage, InputSanitizer, SecurityValidator } from "../lib/security-manager";
 import { sfxReducer, initialSFXState, SFXActions, type SFXState, type SFXFileInfo } from "../lib/state-manager";
 import { LicenseManager } from "../lib/license-manager";
 import "./main.scss";
-import "../components/ToastSystem.scss";
+// Removed ToastSystem SCSS
 import "../components/ErrorBoundary.scss";
 
-// Performance utility for conditional logging
+// Performance utility for conditional logging - now silent by default
 const devLog = (...args: any[]) => {
-  if (process.env.NODE_ENV === 'development') {
+  // Only log critical debug events
+  if (process.env.NODE_ENV === 'development' && (args[0]?.includes?.('🚨') || args[0]?.includes?.('❌'))) {
     console.log(...args);
   }
 };
@@ -59,8 +60,9 @@ const fsAsync = {
       // PERFORMANCE: Use immediate execution, but with yield
       try {
         const items = fs.readdirSync(path);
-        // Use setImmediate equivalent to yield control
-        setImmediate(() => resolve(items));
+        // PERFORMANCE: Limit results and yield control
+        const limitedItems = items.slice(0, 200); // Max 200 files per directory
+        setImmediate(() => resolve(limitedItems));
       } catch (error) {
         setImmediate(() => reject(error));
       }
@@ -97,7 +99,7 @@ const fsAsync = {
 export const App = () => {
 
   const [bgColor, setBgColor] = useState("#2a2a2a");
-  const toast = useToast();
+  // Removed toast system for silent operation
   const [state, dispatch] = useReducer(sfxReducer, initialSFXState);
   
   // REMOVED: setState compatibility helper - was causing performance issues
@@ -105,88 +107,173 @@ export const App = () => {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const timelineUpdateRef = useRef<NodeJS.Timeout>();
   const cachedFileInfoRef = useRef<SFXFileInfo[]>([]);
-  const CACHE_DURATION = 300000; // 5 minutes cache for much better performance
+  const CACHE_DURATION = 900000; // 15 minutes cache for maximum performance
+  
+  // Track textarea focus state for aggressive left/right arrow capture
+  const [textareaHasFocus, setTextareaHasFocus] = useState(false);
 
-  // Debounced file scanning for performance
+  // Enhanced file scanning with detailed debugging
   const performFileScanning = useCallback(async () => {
+    console.log('🔍 SPACEBAR SCAN: Starting comprehensive SFX scan...');
     dispatch(SFXActions.setScanningFiles(true));
     
     try {
+      const scanStartTime = performance.now();
+      console.log('📁 SCAN TARGET: Custom path =', state.customSFXPath || 'null (will use project default)');
+      
       const allFiles = await scanExistingSFXFiles(state.customSFXPath);
-      // Performance: Reduced logging
-      devLog(`📚 Loaded ${allFiles.length} SFX files for lookup`);
+      const scanDuration = performance.now() - scanStartTime;
+      
+      console.log(`✅ SCAN COMPLETE: Found ${allFiles.length} files in ${scanDuration.toFixed(0)}ms`);
+      console.log('📊 SCAN BREAKDOWN:', {
+        filesystemFiles: allFiles.filter(f => f.source === 'filesystem').length,
+        projectBinFiles: allFiles.filter(f => f.source === 'project_bin').length,
+        totalUnique: allFiles.length
+      });
+      
+      // Log to file
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - SCAN COMPLETE: Found ${allFiles.length} files (FS: ${allFiles.filter(f => f.source === 'filesystem').length}, Bins: ${allFiles.filter(f => f.source === 'project_bin').length})\n`;
+        fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+        
+        // Log first few filenames for debugging
+        if (allFiles.length > 0) {
+          const sampleFiles = allFiles.slice(0, 3).map(f => f.filename).join(', ');
+          const sampleMessage = `${timestamp} - SAMPLE FILES: ${sampleFiles}${allFiles.length > 3 ? '...' : ''}\n`;
+          fs.writeFileSync(logPath, sampleMessage, { flag: 'a' });
+        }
+      } catch (e) {}
+      
+      if (allFiles.length === 0) {
+        console.warn('⚠️ NO FILES FOUND: This suggests scanning failed or no SFX exist');
+        console.log('🔧 DEBUGGING HINTS:');
+        console.log('  - Check if project is saved (needed for project path detection)');
+        console.log('  - Verify SFX files exist in: Project/SFX/ or custom folder');
+        console.log('  - Check if audio files are in Premiere bins named "SFX" or "AI SFX"');
+      }
       
       // Cache the results
       cachedFileInfoRef.current = allFiles;
       
       dispatch(SFXActions.updateFileScan(allFiles, Date.now()));
     } catch (error) {
+      console.error('❌ SCAN FAILED:', error);
       ErrorUtils.handleFileError(error as Error, { operation: 'scanExistingSFXFiles' });
       dispatch(SFXActions.setScanningFiles(false));
     }
   }, [state.customSFXPath]);
 
-  const debouncedFileScanning = useDebounce(performFileScanning, 1000); // Increased debounce
+  const debouncedFileScanning = useDebounce(performFileScanning, 2000); // Much longer debounce for performance
   
-  // Performance-optimized file filtering logic
+  // Professional fuzzy search logic
   const performFileFiltering = useCallback((searchTerm: string, allFiles: SFXFileInfo[]) => {
-    if (searchTerm.trim() === '') {
-      return [];
+    // Handle empty/space-only search - show ALL files (professional behavior)
+    const cleanedSearch = searchTerm.trim();
+    if (cleanedSearch === '' || searchTerm === ' ') {
+      console.log('🔍 EMPTY SEARCH: Showing all files');
+      // Log to file
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - EMPTY SEARCH: Showing all ${allFiles.length} files\n`;
+        fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+      } catch (e) {}
+      return allFiles.map(f => f.filename);
     }
 
-    const normalizedSearch = searchTerm.toLowerCase();
+    const normalizedSearch = cleanedSearch.toLowerCase();
+    console.log('🔍 FILTERING FILES:', { searchTerm: normalizedSearch, totalFiles: allFiles.length });
     
-    // Enhanced parsing: Check if search term ends with a number (e.g., "explosion 3")
-    const searchMatch = normalizedSearch.match(/^(.+?)\s+(\d+)$/);
-    const hasPromptAndNumber = searchMatch !== null;
-    const searchPrompt = hasPromptAndNumber ? searchMatch[1].trim() : '';
-    const searchNumber = hasPromptAndNumber ? parseInt(searchMatch[2]) : 0;
-    
-    // Filter existing files using the full file info
-    const filteredFileInfo = allFiles.filter(file => {
-      // Check if search term is ONLY a number (for numbered file retrieval)
-      const isNumberOnlySearch = /^\d+$/.test(normalizedSearch);
+    // Professional search scoring
+    const scoredFiles = allFiles.map(file => {
+      const prompt = file.prompt.toLowerCase().replace(/_/g, ' ');
+      const basename = file.basename.toLowerCase().replace(/_/g, ' ');
+      const filename = file.filename.toLowerCase().replace(/_/g, ' ');
       
-      if (hasPromptAndNumber) {
-        // Smart search: "explosion 3" finds exactly the 3rd explosion
-        const normalizedPrompt = file.prompt.toLowerCase().replace(/_/g, ' ');
-        const promptMatches = normalizedPrompt.includes(searchPrompt) || searchPrompt.includes(normalizedPrompt);
-        const numberMatches = file.number === searchNumber;
-        return promptMatches && numberMatches;
-      } else if (isNumberOnlySearch) {
-        // Search by number suffix: if user types "1" or "12", match files ending with those numbers
-        const searchNum = parseInt(normalizedSearch);
-        const fileNumber = file.number || 0;
-        
-        // Match if the file number equals the search number, or if filename ends with " number.extension"
-        return fileNumber === searchNum || 
-               file.filename.match(new RegExp(`\\s${normalizedSearch}\\.[a-zA-Z0-9]+$`));
-      } else {
-        // Text search in both the prompt and filename, handling underscores as spaces
-        const normalizedPrompt = file.prompt.replace(/_/g, ' ');
-        const normalizedBasename = file.basename.replace(/_/g, ' ');
-        const normalizedFilename = file.filename.replace(/_/g, ' ');
-        
-        // Also normalize search term to handle underscores
-        const normalizedSearchTerm = normalizedSearch.replace(/_/g, ' ');
-        
-        const searchableText = `${normalizedPrompt} ${normalizedBasename} ${normalizedFilename}`.toLowerCase();
-        return searchableText.includes(normalizedSearchTerm) || 
-               searchableText.includes(normalizedSearch); // Also try original search term
+      let score = 0;
+      let reasons: string[] = [];
+      
+      // 1. EXACT MATCH (highest priority)
+      if (prompt === normalizedSearch || basename === normalizedSearch) {
+        score += 1000;
+        reasons.push('exact_match');
       }
+      
+      // 2. STARTS WITH (very high priority)
+      if (prompt.startsWith(normalizedSearch) || basename.startsWith(normalizedSearch) || filename.startsWith(normalizedSearch)) {
+        score += 500;
+        reasons.push('starts_with');
+      }
+      
+      // 3. CONTAINS (high priority)
+      if (prompt.includes(normalizedSearch) || basename.includes(normalizedSearch) || filename.includes(normalizedSearch)) {
+        score += 100;
+        reasons.push('contains');
+      }
+      
+      // 4. WORD BOUNDARIES (medium priority)
+      const searchRegex = new RegExp(`\\b${normalizedSearch}`, 'i');
+      if (searchRegex.test(prompt) || searchRegex.test(basename) || searchRegex.test(filename)) {
+        score += 50;
+        reasons.push('word_boundary');
+      }
+      
+      // 5. CHARACTER SEQUENCE (fuzzy matching)
+      const searchChars = normalizedSearch.split('');
+      const promptChars = prompt.split('');
+      let charMatches = 0;
+      let lastIndex = -1;
+      
+      for (const char of searchChars) {
+        const index = promptChars.indexOf(char, lastIndex + 1);
+        if (index > lastIndex) {
+          charMatches++;
+          lastIndex = index;
+        }
+      }
+      
+      if (charMatches === searchChars.length) {
+        score += 25;
+        reasons.push('char_sequence');
+      }
+      
+      return { file, score, reasons };
     });
     
-    // Keep the full filename (with extension) for display
-    return filteredFileInfo.map(f => f.filename);
+    // Filter and sort by score
+    const filtered = scoredFiles
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+    
+    console.log(`🎯 SEARCH RESULTS: "${normalizedSearch}" matched ${filtered.length}/${allFiles.length} files`);
+    
+    // Log to file
+    try {
+      const logPath = '/tmp/ai-sfx-debug.log';
+      const timestamp = new Date().toISOString();
+      const logMessage = `${timestamp} - SEARCH "${normalizedSearch}": ${filtered.length}/${allFiles.length} matches\n`;
+      fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+      
+      if (filtered.length > 0) {
+        const topResults = filtered.slice(0, 3).map(item => `${item.file.filename} (score:${item.score})`).join(', ');
+        const resultsMessage = `${timestamp} - TOP RESULTS: ${topResults}\n`;
+        fs.writeFileSync(logPath, resultsMessage, { flag: 'a' });
+      }
+    } catch (e) {}
+    
+    return filtered.map(item => item.file.filename);
   }, []);
   
   // Debounced file filtering to prevent lag during typing
   const debouncedFileFiltering = useDebounce((searchTerm: string, allFiles: SFXFileInfo[]) => {
-    const filteredNames = performFileFiltering(searchTerm, allFiles);
+    // Limit results for performance
+    const filteredNames = performFileFiltering(searchTerm, allFiles).slice(0, 50); // Max 50 results
     dispatch(SFXActions.setFilteredSFXFiles(filteredNames));
     dispatch(SFXActions.setSelectedDropdownIndex(filteredNames.length > 0 ? 0 : -1));
     dispatch(SFXActions.showSFXDropdown(true));
-  }, 150); // 150ms debounce for responsive feel
+  }, 300); // Longer debounce for performance
 
   // Initialize bridge connection and console forwarding
   useEffect(() => {
@@ -205,6 +292,9 @@ export const App = () => {
       };
     }
     
+    // DISABLED: Console forwarding also disabled to eliminate any bridge client calls
+    // All console methods remain as original - no forwarding to bridge
+    /*
     console.error = function(...args) {
       const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
       if (bridgeClient.getStatus().connected) {
@@ -236,8 +326,12 @@ export const App = () => {
       }
       originalConsoleDebug.apply(console, args);
     };
+    */
     
-    // Connect to bridge
+    // DISABLED: Bridge connection completely disabled to eliminate console polling
+    // bridgeClient.connect() causes WebSocket connection attempts every 2 seconds
+    // Commenting out to provide clean console experience
+    /*
     bridgeClient.connect().then(connected => {
       if (connected) {
         devLog('✅ Bridge client connected successfully');
@@ -258,6 +352,7 @@ export const App = () => {
         console.warn('⚠️ Bridge client failed to connect');
       }
     });
+    */
 
     return () => {
       // Restore original console methods
@@ -267,7 +362,7 @@ export const App = () => {
       console.info = originalConsoleInfo;
       console.debug = originalConsoleDebug;
       
-      bridgeClient.disconnect();
+      // bridgeClient.disconnect(); // Disabled since bridge connection is disabled
     };
   }, []);
 
@@ -355,44 +450,36 @@ export const App = () => {
   // Show status in console for debugging
   // Professional status and error handling
   const showStatus = useCallback((message: string, duration = 2000) => {
-    toast.info(message, duration);
-  }, [toast]);
+    // Silent operation - no status messages
+    console.log(`ℹ️ Status: ${message}`);
+  }, []);
 
   const showSuccess = useCallback((message: string, duration = 2000) => {
-    toast.success(message, duration);
-  }, [toast]);
+    // Silent operation - no success notifications
+    console.log(`✅ Success: ${message}`);
+  }, []);
 
   const showWarning = useCallback((message: string, duration = 3000) => {
-    toast.warning(message, duration);
-  }, [toast]);
+    // Silent operation - no warning notifications
+    console.log(`⚠️ Warning: ${message}`);
+  }, []);
 
   const showError = useCallback((message: string, duration = 5000, action?: { label: string; handler: () => void }) => {
-    toast.error(message, duration, action);
-  }, [toast]);
+    // Silent operation - no error notifications
+    console.error(`❌ Error: ${message}`);
+  }, []);
 
-  // Set up error manager notification integration
+  // Error manager integration - DISABLED for silent operation
   useEffect(() => {
     const unsubscribe = errorManager.onNotification((notification) => {
-      switch (notification.type) {
-        case 'success':
-          toast.success(notification.message, notification.duration);
-          break;
-        case 'error':
-          toast.error(notification.message, notification.duration, notification.action);
-          break;
-        case 'warning':
-          toast.warning(notification.message, notification.duration);
-          break;
-        case 'info':
-          toast.info(notification.message, notification.duration);
-          break;
-      }
+      // Silent operation - log to console only
+      console.log(`📢 ${notification.type.toUpperCase()}: ${notification.message}`);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [toast]);
+  }, []);
 
 
   // Update timeline info (optimized with change detection)
@@ -401,16 +488,17 @@ export const App = () => {
       const timelineInfo = await evalTS("getSequenceInfo");
       
       // Only update if the essential data changed (performance optimization)
+      // Include actual time values in hash, not just booleans
       const prevHash = state.timelineInfo ? 
-        `${state.timelineInfo.hasInPoint}-${state.timelineInfo.hasOutPoint}-${state.timelineInfo.sequenceName}` : '';
+        `${state.timelineInfo.hasInPoint}-${state.timelineInfo.hasOutPoint}-${state.timelineInfo.inPoint?.seconds}-${state.timelineInfo.outPoint?.seconds}-${state.timelineInfo.sequenceName}` : '';
       const newHash = timelineInfo ? 
-        `${timelineInfo.hasInPoint}-${timelineInfo.hasOutPoint}-${timelineInfo.sequenceName}` : '';
+        `${timelineInfo.hasInPoint}-${timelineInfo.hasOutPoint}-${timelineInfo.inPoint?.seconds}-${timelineInfo.outPoint?.seconds}-${timelineInfo.sequenceName}` : '';
       
       if (prevHash !== newHash) {
         dispatch(SFXActions.setTimelineInfo(timelineInfo));
       }
     } catch (error) {
-      // Timeline update failed
+      console.error('❌ Timeline update failed:', error);
     }
   }, [state.timelineInfo, dispatch]);
 
@@ -436,14 +524,17 @@ export const App = () => {
 
   // Handle generation
   const handleGenerate = useCallback(async () => {
-    // Performance: Reduced logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🎬 handleGenerate called with prompt:', `"${state.prompt}"`, 'isGenerating:', state.isGenerating);
-    }
+    // DEBUG: Generation start
+    console.log('🎬 handleGenerate START:', { 
+      prompt: state.prompt, 
+      isGenerating: state.isGenerating,
+      isLicensed: state.isLicensed,
+      hasApiKey: !!state.apiKey 
+    });
     
     // Allow empty prompt check but don't block if already generating
     if (!state.prompt.trim()) {
-      if (process.env.NODE_ENV === 'development') console.log('⚠️ Empty prompt - returning early');
+      console.log('⚠️ Empty prompt - returning early');
       return;
     }
     
@@ -453,10 +544,19 @@ export const App = () => {
       return;
     }
 
+    // Debug: Check API key and validation
+    console.log('🔍 Current state:', { 
+      isLicensed: state.isLicensed, 
+      hasApiKey: !!state.apiKey, 
+      apiKeyStart: state.apiKey?.substring(0, 10),
+      prompt: state.prompt?.substring(0, 20) 
+    });
+    
     // Validate API key and prompt securely
     const validation = SecurityValidator.validateAPIRequest(state.prompt, state.apiKey);
     if (!validation.valid) {
       console.log('❌ Validation failed:', validation.errors);
+      console.log('❌ Invalid API key or prompt:', { apiKey: state.apiKey?.substring(0, 10), prompt: state.prompt });
       showError(`Validation failed: ${validation.errors.join(', ')}`);
       return;
     }
@@ -473,11 +573,14 @@ export const App = () => {
     // Sanitize the prompt before using it
     const promptToGenerate = InputSanitizer.sanitizePrompt(state.prompt);
     
+    console.log('🔄 Step 2: Setting generating state to true');
     dispatch(SFXActions.setGenerating(true));
+    console.log('🔍 Step 3: Starting timeline detection...');
     showStatus('Detecting timeline...');
 
     try {
       // Get current timeline info and capture playhead position immediately
+      console.log('📺 Step 4: Getting timeline info from Premiere...');
       const timelineInfo = await evalTS("getSequenceInfo");
       const currentPlayheadPosition = timelineInfo?.playheadPosition || timelineInfo?.playhead?.seconds || 0;
       
@@ -523,18 +626,30 @@ export const App = () => {
         throw new Error('Cannot connect to Premiere Pro. Make sure a project is open.');
       }
       
+      console.log('🎵 Step 5: Starting SFX generation with ElevenLabs...', { prompt: promptToGenerate, duration, hasApiKey: !!state.apiKey });
       showStatus('Generating SFX...');
       
       // Generate audio using Eleven Labs API
       const audioData = await generateSFX(promptToGenerate, duration, state.apiKey, state.promptInfluence);
       
+      console.log('✅ Step 6: SFX generation completed, now placing on timeline...', { audioDataSize: audioData?.byteLength });
       showStatus('Placing on timeline...');
       
       // Save audio file
+      console.log('💾 Step 6a: Saving audio file...');
       const filePath = await saveAudioFile(audioData, promptToGenerate);
+      console.log('✅ Step 6b: Audio file saved to:', filePath);
       
+      // Verify file was created
+      if (await fsAsync.exists(filePath)) {
+        console.log('✅ Step 6c: File exists on disk, proceeding to timeline placement');
+      } else {
+        console.log('❌ Step 6c: File NOT found on disk after save!');
+        throw new Error('Audio file was not saved properly');
+      }
       
       // Place audio on timeline with enhanced error handling
+      console.log('🎬 Step 7: Starting timeline placement process...');
       let result: PlacementResult;
       
       
@@ -556,35 +671,54 @@ export const App = () => {
       }
       
       try {
+        console.log('🎬 Step 7a: Calling timeline placement function...');
+        console.log('  • File path:', filePath);
+        console.log('  • Position:', placementPosition || currentPlayheadPosition);
+        console.log('  • Target track:', targetTrackIndex);
+        
         if (placementPosition !== null) {
-          result = await evalTS("importAndPlaceAudioAtTime", filePath, placementPosition, targetTrackIndex);
+          console.log('📍 Using specific placement position:', placementPosition);
+          result = await evalTS("importAndPlaceAudioAtTime", filePath, placementPosition, targetTrackIndex, state.sfxPlacement);
         } else {
-          result = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex);
+          console.log('📍 Using current playhead position:', currentPlayheadPosition);
+          result = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex, state.sfxPlacement);
         }
         
-        
-        
+        console.log('🎬 Step 7b: Timeline placement result:', result);
         
         // Enhanced error reporting
         if (!result || !result.success) {
+          console.log('⚠️ First placement attempt failed, trying fallback...');
+          console.log('❌ Error:', result?.error);
           showStatus('Trying alternative placement...');
           
           // Fallback: Try with captured playhead position and same target track
-          const fallbackResult = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex);
+          console.log('🔄 Fallback: Using playhead position with same track');
+          const fallbackResult = await evalTS("importAndPlaceAudioAtTime", filePath, currentPlayheadPosition, targetTrackIndex, state.sfxPlacement);
+          console.log('🔄 Fallback result:', fallbackResult);
           
           if (fallbackResult && fallbackResult.success) {
+            console.log('✅ Fallback placement succeeded!');
             result = fallbackResult;
           } else {
+            console.log('❌ Both placement attempts failed');
+            console.log('Primary error:', result?.error);
+            console.log('Fallback error:', fallbackResult?.error);
             throw new Error(result?.error || 'Timeline placement failed completely');
           }
+        } else {
+          console.log('✅ Step 7c: Timeline placement succeeded on first attempt!');
         }
       } catch (placementError) {
+        console.log('❌ Step 7d: All placement attempts failed with error:', placementError);
         // Last resort: Show user where file was saved
         showStatus(`SFX saved to ${filePath}. Please manually drag to timeline.`, 5000);
         throw new Error(`Timeline placement failed: ${placementError instanceof Error ? placementError.message : String(placementError)}`);
       }
       
+      console.log('🏁 Step 8: Processing final result...');
       if (result.success) {
+        console.log('✅ Step 8a: Timeline placement confirmed successful!');
         // Only clear the prompt that was actually generated, not the current one
         // If user hasn't typed anything new, clear the prompt
         if (state.prompt.trim() === promptToGenerate) {
@@ -619,6 +753,7 @@ export const App = () => {
 
   // Generate SFX using Eleven Labs API with retry logic
   const generateSFX = async (prompt: string, duration: number, apiKey: string, promptInfluence: number): Promise<ArrayBuffer> => {
+    console.log('🔥 generateSFX called:', { prompt, duration, apiKeyFirst10: apiKey?.substring(0, 10), promptInfluence });
     const maxRetries = 3;
     let attempt = 0;
     
@@ -626,6 +761,7 @@ export const App = () => {
       try {
         attempt++;
         console.log(`🎵 API attempt ${attempt}/${maxRetries} for: "${prompt}"`);
+        console.log(`🔑 Using API key: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}`);
         
         const response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
           method: 'POST',
@@ -691,42 +827,104 @@ export const App = () => {
     throw new Error(`Failed to generate SFX after ${maxRetries} attempts`);
   };
 
-  // Get SFX folder path
+  // Get SFX folder path with comprehensive debugging
   const getSFXPath = async (): Promise<string | null> => {
+    console.log('🔍 getSFXPath() called - starting detailed analysis...');
+    
     // First check for custom path
     if (state.customSFXPath) {
+      console.log('✅ Using custom SFX path:', state.customSFXPath);
       return state.customSFXPath;
     }
     
+    console.log('🔍 No custom path, checking project path...');
+    
     try {
-      // Get project directory from ExtendScript
-      const result = await new Promise<any>((resolve) => {
+      // COMPARISON: Test both approaches side by side
+      console.log('🔍 Testing Method 1: Direct getProjectPath() call...');
+      const directResult = await new Promise<any>((resolve) => {
         csi.evalScript('getProjectPath()', (result) => {
+          console.log('📤 Direct call raw result:', result);
           try {
-            resolve(JSON.parse(result));
+            const parsed = JSON.parse(result);
+            console.log('✅ Direct call parsed result:', parsed);
+            resolve(parsed);
           } catch (e) {
-            resolve({ success: false, error: 'Failed to parse result' });
+            console.log('❌ Direct call parse error:', e);
+            resolve({ success: false, error: 'Failed to parse result', raw: result });
           }
         });
       });
       
-      if (result.success && result.projectDir) {
-        // Return project folder > SFX > ai sfx path
-        return `${result.projectDir}/SFX/ai sfx`;
+      console.log('🔍 Testing Method 2: Namespace approach (like debug function)...');
+      const namespaceResult = await new Promise<any>((resolve) => {
+        csi.evalScript(`
+          try {
+            var host = typeof $ !== 'undefined' ? $ : window;
+            var ns = "com.ai.sfx.generator";
+            if (host[ns] && host[ns].getProjectPath) {
+              var result = host[ns].getProjectPath();
+              result;
+            } else {
+              JSON.stringify({success: false, error: "getProjectPath function not available in namespace"});
+            }
+          } catch (e) {
+            JSON.stringify({success: false, error: "Error calling namespace getProjectPath: " + e.toString()});
+          }
+        `, (result) => {
+          console.log('📤 Namespace call raw result:', result);
+          try {
+            const parsed = JSON.parse(result);
+            console.log('✅ Namespace call parsed result:', parsed);
+            resolve(parsed);
+          } catch (e) {
+            console.log('❌ Namespace call parse error:', e);
+            resolve({ success: false, error: 'Failed to parse result', raw: result });
+          }
+        });
+      });
+      
+      // Compare results
+      console.log('📊 COMPARISON:');
+      console.log('Direct method success:', directResult.success);
+      console.log('Namespace method success:', namespaceResult.success);
+      
+      // Use the working method
+      let workingResult: any = null;
+      if (namespaceResult.success && (namespaceResult as any).projectDir) {
+        console.log('✅ Using namespace result (working)');
+        workingResult = namespaceResult;
+      } else if (directResult.success && (directResult as any).projectDir) {
+        console.log('✅ Using direct result (working)');
+        workingResult = directResult;
       } else {
-        // No project open - user must specify custom folder
+        console.log('❌ Both methods failed:');
+        console.log('Direct error:', directResult.error);
+        console.log('Namespace error:', namespaceResult.error);
         return null;
       }
+      
+      if (workingResult && workingResult.projectDir) {
+        const sfxPath = `${workingResult.projectDir}/SFX/ai sfx`;
+        console.log('🎯 SUCCESS - SFX path calculated:', sfxPath);
+        return sfxPath;
+      } else {
+        console.log('❌ No valid project directory found');
+        return null;
+      }
+      
     } catch (error) {
-      // Error getting project path - user must specify custom folder
+      console.log('❌ Error in getSFXPath:', error);
       return null;
     }
   };
 
   // Scan existing SFX files from both filesystem and project bins
   const scanExistingSFXFiles = async (customPath?: string | null): Promise<SFXFileInfo[]> => {
+    console.log('🚀 scanExistingSFXFiles: Starting comprehensive scan...');
     const allFiles: SFXFileInfo[] = [];
     const pathToUse = customPath !== undefined ? customPath : state.customSFXPath;
+    console.log('🎯 Scan target path:', pathToUse);
     
     try {
       // 1. Scan both main SFX folder and ai sfx subfolder
@@ -764,23 +962,27 @@ export const App = () => {
       
       // First priority: Check custom path if set
       if (pathToUse && await fsAsync.exists(pathToUse)) {
-        devLog(`📁 Scanning custom SFX folder: ${pathToUse}`);
+        console.log(`📁 FILESYSTEM SCAN 1: Custom SFX folder: ${pathToUse}`);
         foldersToScan.push(pathToUse);
+      } else if (pathToUse) {
+        console.warn(`⚠️ Custom path set but doesn't exist: ${pathToUse}`);
       }
       
       // Also scan default locations for backward compatibility
       if (projectPath.success && projectPath.projectDir) {
+        console.log(`📂 PROJECT DETECTED: ${projectPath.projectDir}`);
         // ONLY scan the exact paths where we save files
         // 1. Primary location: Project/SFX/ai sfx
         const primaryPath = `${projectPath.projectDir}/SFX/ai sfx`;
         if (await fsAsync.exists(primaryPath) && primaryPath !== pathToUse) {
+          console.log(`📁 FILESYSTEM SCAN 2: Primary AI SFX folder: ${primaryPath}`);
           foldersToScan.push(primaryPath);
         }
         
         // 2. Also scan Project/SFX folder (parent of ai sfx) for manually added files
         const projectSFXPath = `${projectPath.projectDir}/SFX`;
         if (await fsAsync.exists(projectSFXPath) && projectSFXPath !== pathToUse) {
-          devLog(`🎯 Found project SFX folder: ${projectSFXPath}`);
+          console.log(`📁 FILESYSTEM SCAN 3: Parent SFX folder: ${projectSFXPath}`);
           foldersToScan.push(projectSFXPath);
           
           // Add immediate subfolders of SFX (but not recursive to avoid deep scanning)
@@ -798,14 +1000,17 @@ export const App = () => {
             // Skip subfolders that can't be read
           }
         }
+      } else {
+        console.warn('⚠️ PROJECT PATH DETECTION FAILED:', projectPath);
       }
       
       // Remove duplicates
       const uniqueFolders = [...new Set(foldersToScan)];
-      
+      console.log(`📋 FILESYSTEM SCAN SUMMARY: Will scan ${uniqueFolders.length} folders:`, uniqueFolders);
       
       // Scan each folder recursively
       for (const sfxPath of uniqueFolders) {
+        console.log(`🔍 Scanning folder: ${sfxPath}`);
         
         // Async recursive function to scan directories
         async function scanDirectoryRecursively(dirPath: string, relativePath = ''): Promise<SFXFileInfo[]> {
@@ -905,11 +1110,14 @@ export const App = () => {
         }
         
         const filesystemFiles = await scanDirectoryRecursively(sfxPath);
+        console.log(`✅ Found ${filesystemFiles.length} files in ${sfxPath}`);
         allFiles.push(...filesystemFiles);
       }
       
+      console.log(`📊 FILESYSTEM SCAN COMPLETE: Found ${allFiles.length} files total`);
       
       // 2. Scan project bins named "sfx" or "ai sfx"
+      console.log('🎬 STARTING PROJECT BIN SCAN...');
       const projectBinResult = await new Promise<any>((resolve) => {
         // Use direct namespace access for bin scanning too
         csi.evalScript(`
@@ -940,6 +1148,22 @@ export const App = () => {
       });
       
       if (projectBinResult.success && projectBinResult.files) {
+        console.log(`✅ PROJECT BIN SCAN SUCCESS: Found ${projectBinResult.files.length} files in bins`);
+        
+        // Log to file for debugging
+        try {
+          const logPath = '/tmp/ai-sfx-debug.log';
+          const timestamp = new Date().toISOString();
+          const logMessage = `${timestamp} - PROJECT BINS: Found ${projectBinResult.files.length} files in Premiere bins\n`;
+          fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          
+          if (projectBinResult.files.length > 0) {
+            const binFiles = projectBinResult.files.slice(0, 3).map(f => `${f.filename} (from ${f.binPath})`).join(', ');
+            const binMessage = `${timestamp} - BIN FILES: ${binFiles}${projectBinResult.files.length > 3 ? '...' : ''}\n`;
+            fs.writeFileSync(logPath, binMessage, { flag: 'a' });
+          }
+        } catch (e) {}
+        
         // Convert project bin files to our format
         const projectFiles = projectBinResult.files.map((file: any) => ({
           filename: file.filename,
@@ -953,6 +1177,8 @@ export const App = () => {
         }));
         
         allFiles.push(...projectFiles);
+      } else {
+        console.warn('⚠️ PROJECT BIN SCAN FAILED:', projectBinResult);
       }
       
       // Remove duplicates (same filename) - prefer project bin files
@@ -997,7 +1223,10 @@ export const App = () => {
     const sfxPath = await getSFXPath();
     
     if (!sfxPath) {
-      throw new Error('Could not determine SFX folder path');
+      // DEBUGGING: Run comprehensive project path debugging
+      console.log('🚨 PROJECT PATH DETECTION FAILED - Running comprehensive debugging...');
+      await debugProjectPathIssues();
+      throw new Error('Please save your Premiere project first (Cmd+S), then try generating SFX again.');
     }
 
     // Validate file path security
@@ -1055,6 +1284,98 @@ export const App = () => {
     }
   }, [dispatch]);
 
+  // Validate license key function
+  const validateLicenseKey = useCallback(async (licenseKey: string) => {
+    if (!licenseKey.trim()) {
+      showError('Please enter a license key');
+      return;
+    }
+
+    try {
+      showStatus('Validating license...', 2000);
+      const result = await LicenseManager.validateLicense(licenseKey);
+      
+      if (result.valid && result.apiKey) {
+        // License is valid - activate it
+        localStorage.setItem('licenseKey', licenseKey);
+        localStorage.setItem('isLicensed', 'true');
+        localStorage.setItem('apiKey', result.apiKey);
+        
+        dispatch(SFXActions.setLicensed(true));
+        dispatch(SFXActions.setLicenseKey(licenseKey));
+        dispatch(SFXActions.setApiKey(result.apiKey));
+        
+        showSuccess('License activated successfully!', 3000);
+      } else {
+        // License validation failed
+        dispatch(SFXActions.setLicensed(false));
+        showError(result.error || 'Invalid license key', 4000);
+      }
+    } catch (error) {
+      console.error('License validation error:', error);
+      dispatch(SFXActions.setLicensed(false));
+      showError('Failed to validate license. Please try again.', 4000);
+    }
+  }, [dispatch, showStatus, showSuccess, showError]);
+
+  // Check for updates using GitHub Releases API
+  const checkForUpdates = useCallback(async (manual = false) => {
+    try {
+      dispatch(SFXActions.setCheckingUpdates(true));
+      
+      if (manual) {
+        showStatus('Checking for updates...', 2000);
+      }
+
+      const response = await fetch('https://api.github.com/repos/Richardphutran/ai-sfx-premiere/releases/latest');
+      
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status}`);
+      }
+
+      const release = await response.json();
+      const latestVersion = release.tag_name;
+      const currentVersion = 'v1.0.0'; // TODO: Get from package.json or config
+      
+      dispatch(SFXActions.setLatestVersion(latestVersion));
+      
+      // Simple version comparison (assumes semantic versioning like v1.0.0)
+      const isUpdateAvailable = latestVersion !== currentVersion;
+      dispatch(SFXActions.setUpdateAvailable(isUpdateAvailable));
+      
+      // Find .zxp download URL from release assets
+      const zxpAsset = release.assets?.find((asset: any) => asset.name.endsWith('.zxp'));
+      dispatch(SFXActions.setUpdateDownloadUrl(zxpAsset?.browser_download_url || null));
+
+      if (manual) {
+        if (isUpdateAvailable) {
+          showSuccess(`Update available: ${latestVersion}`, 4000);
+        } else {
+          showStatus('You have the latest version!', 3000);
+        }
+      }
+
+    } catch (error) {
+      console.error('Update check failed:', error);
+      if (manual) {
+        showError('Failed to check for updates. Please try again later.', 4000);
+      }
+    } finally {
+      dispatch(SFXActions.setCheckingUpdates(false));
+    }
+  }, [dispatch, showStatus, showSuccess, showError]);
+
+  // Auto-check for updates on startup if enabled
+  useEffect(() => {
+    if (state.autoCheckUpdates) {
+      // Auto-check after 5 seconds to not interfere with startup
+      const timeoutId = setTimeout(() => {
+        checkForUpdates(false);
+      }, 5000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [state.autoCheckUpdates, checkForUpdates]);
 
   // Handle text input changes (license key or prompt)
   const handlePromptChange = useCallback((value: string) => {
@@ -1078,12 +1399,21 @@ export const App = () => {
     }
   }, [dispatch, state.isLookupMode, state.allSFXFileInfo, debouncedFileFiltering]);
 
+  // Add timeout tracking for auto-play navigation
+  const autoPlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Preview audio file
   const previewAudio = useCallback((filePath: string) => {
     // Stop any existing preview
     if (state.previewAudio) {
       state.previewAudio.pause();
       state.previewAudio.currentTime = 0;
+    }
+
+    // Cancel any pending auto-play timeouts
+    if (autoPlayTimeoutRef.current) {
+      clearTimeout(autoPlayTimeoutRef.current);
+      autoPlayTimeoutRef.current = null;
     }
 
     // Create new audio element
@@ -1111,8 +1441,14 @@ export const App = () => {
     });
   }, [state.previewAudio]);
 
-  // Stop audio preview
+  // Stop audio preview and cancel any pending auto-play
   const stopPreview = useCallback(() => {
+    // Cancel any pending auto-play timeouts
+    if (autoPlayTimeoutRef.current) {
+      clearTimeout(autoPlayTimeoutRef.current);
+      autoPlayTimeoutRef.current = null;
+    }
+
     if (state.previewAudio) {
       state.previewAudio.pause();
       state.previewAudio.currentTime = 0;
@@ -1121,6 +1457,73 @@ export const App = () => {
       dispatch(SFXActions.setPreviewFile(null));
     }
   }, [state.previewAudio, dispatch]);
+
+  // DEBUG PROJECT PATH DETECTION - Add this before handleSFXFileSelect
+  const debugProjectPathIssues = useCallback(async () => {
+    console.log('🔍 DEBUGGING PROJECT PATH DETECTION ISSUES...');
+    
+    try {
+      // Test 1: Basic ExtendScript connection
+      console.log('🔍 Testing ExtendScript Connection...');
+      const basicTest = await evalTS("testBasicExtendScript");
+      
+      if (!basicTest?.success) {
+        console.log('❌ ExtendScript Error:', basicTest?.error);
+        console.log('🚨 FOUND THE ISSUE: ExtendScript connection failed');
+        console.log('💡 SOLUTION: Make sure Premiere Pro is running and plugin is loaded');
+        return false;
+      }
+      
+      // Test 2: Current getProjectPath function (most important)
+      console.log('🔍 Testing Project Path Detection...');
+      const currentProjectPath = await new Promise<any>((resolve) => {
+        // Use namespace access for proper function calls
+        csi.evalScript(`
+          try {
+            var host = typeof $ !== 'undefined' ? $ : window;
+            var ns = "com.ai.sfx.generator";
+            if (host[ns] && host[ns].getProjectPath) {
+              var result = host[ns].getProjectPath();
+              result;
+            } else {
+              JSON.stringify({success: false, error: "getProjectPath function not available"});
+            }
+          } catch (e) {
+            JSON.stringify({success: false, error: "Error calling getProjectPath: " + e.toString()});
+          }
+        `, (result) => {
+          try {
+            resolve(JSON.parse(result));
+          } catch (e) {
+            resolve({ success: false, error: 'Failed to parse result', raw: result });
+          }
+        });
+      });
+      
+      // Simple, clear analysis
+      console.log('\n📊 DIAGNOSIS:');
+      console.log('✅ ExtendScript Connected:', true);
+      console.log('✅ Timeline Ready:', true);
+      
+      if (currentProjectPath?.success && currentProjectPath?.projectDir) {
+        console.log('🎯 ✅ PROJECT PATH DETECTED:', currentProjectPath.projectDir);
+        console.log('🎯 ✅ SFX PATH READY:', `${currentProjectPath.projectDir}/SFX/ai sfx`);
+        console.log('✅ No issues found - timeline placement should work!');
+      } else {
+        console.log('❌ PROJECT PATH ISSUE:', currentProjectPath?.error || 'Unknown error');
+        if (currentProjectPath?.needsSave) {
+          console.log('🚨 SOLUTION: Save your project first (Cmd+S)');
+        } else {
+          console.log('🚨 UNKNOWN ISSUE - Project appears saved but path not detected');
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Debug function error:', error);
+      return false;
+    }
+  }, []);
 
   // Handle SFX file selection
   const handleSFXFileSelect = useCallback(async (filename: string) => {
@@ -1182,15 +1585,355 @@ export const App = () => {
     }
   }, [showStatus, state.allSFXFileInfo, stopPreview, dispatch]);
 
+  // GLOBAL keyboard event listener to catch arrow keys that might be intercepted
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Only handle arrow keys in lookup mode
+      if (state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0 && e.key.startsWith('Arrow')) {
+        console.log('🌍 GLOBAL ARROW KEY DETECTED:', {
+          key: e.key,
+          code: e.code,
+          target: (e.target as Element)?.tagName,
+          isLookupMode: state.isLookupMode,
+          showDropdown: state.showSFXDropdown,
+          filesCount: state.filteredSFXFiles.length,
+          selectedIndex: state.selectedDropdownIndex
+        });
+        
+        // Log to file for CEP debugging
+        try {
+          const logPath = '/tmp/ai-sfx-debug.log';
+          const timestamp = new Date().toISOString();
+          const logMessage = `${timestamp} - GLOBAL ARROW KEY: ${e.key} (code: ${e.code}) - Target: ${(e.target as Element)?.tagName} - Files: ${state.filteredSFXFiles.length} - Selected: ${state.selectedDropdownIndex}\n`;
+          fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+        } catch (err) {}
+        
+        // Handle right and left arrows globally if they're not being caught by React
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const selectedFilename = state.filteredSFXFiles[state.selectedDropdownIndex];
+          if (selectedFilename) {
+            console.log('🌍▶️ GLOBAL RIGHT: PLAY', selectedFilename);
+            
+            try {
+              const logPath = '/tmp/ai-sfx-debug.log';
+              const timestamp = new Date().toISOString();
+              const logMessage = `${timestamp} - GLOBAL KEYBOARD PLAY: ${selectedFilename}\n`;
+              fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+            } catch (err) {}
+            
+            const selectedFile = state.allSFXFileInfo.find(f => f.filename === selectedFilename);
+            if (selectedFile) {
+              previewAudio(selectedFile.path);
+            }
+          }
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          console.log('🌍⏸️ GLOBAL LEFT: PAUSE/STOP');
+          
+          try {
+            const logPath = '/tmp/ai-sfx-debug.log';
+            const timestamp = new Date().toISOString();
+            const logMessage = `${timestamp} - GLOBAL KEYBOARD PAUSE\n`;
+            fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          } catch (err) {}
+          
+          stopPreview();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // DOWN = Stop current audio + navigate to next + auto-play if already playing
+          stopPreview(); // Stop current audio first (also cancels pending timeouts)
+          
+          const newIndex = state.selectedDropdownIndex < state.filteredSFXFiles.length - 1 
+            ? state.selectedDropdownIndex + 1 
+            : 0;
+          dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
+          
+          // If audio was playing, enable continuous mode and auto-play the new selection
+          if (state.isPlaying || state.continuousPreviewMode) {
+            dispatch(SFXActions.setContinuousPreviewMode(true));
+            
+            const newSelectedFilename = state.filteredSFXFiles[newIndex];
+            if (newSelectedFilename) {
+              const newSelectedFile = state.allSFXFileInfo.find(f => f.filename === newSelectedFilename);
+              if (newSelectedFile) {
+                autoPlayTimeoutRef.current = setTimeout(() => {
+                  // Only play if this timeout hasn't been canceled
+                  if (autoPlayTimeoutRef.current) {
+                    previewAudio(newSelectedFile.path);
+                    autoPlayTimeoutRef.current = null;
+                  }
+                }, 100); // Small delay to ensure selection update
+              }
+            }
+          }
+          
+          try {
+            const logPath = '/tmp/ai-sfx-debug.log';
+            const timestamp = new Date().toISOString();
+            const logMessage = `${timestamp} - GLOBAL DOWN + AUTO-PLAY: ${newIndex}\n`;
+            fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          } catch (err) {}
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // UP = Stop current audio + navigate to previous + auto-play if already playing
+          stopPreview(); // Stop current audio first (also cancels pending timeouts)
+          
+          const newIndex = state.selectedDropdownIndex > 0 
+            ? state.selectedDropdownIndex - 1 
+            : state.filteredSFXFiles.length - 1;
+          dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
+          
+          // If audio was playing, enable continuous mode and auto-play the new selection
+          if (state.isPlaying || state.continuousPreviewMode) {
+            dispatch(SFXActions.setContinuousPreviewMode(true));
+            
+            const newSelectedFilename = state.filteredSFXFiles[newIndex];
+            if (newSelectedFilename) {
+              const newSelectedFile = state.allSFXFileInfo.find(f => f.filename === newSelectedFilename);
+              if (newSelectedFile) {
+                autoPlayTimeoutRef.current = setTimeout(() => {
+                  // Only play if this timeout hasn't been canceled
+                  if (autoPlayTimeoutRef.current) {
+                    previewAudio(newSelectedFile.path);
+                    autoPlayTimeoutRef.current = null;
+                  }
+                }, 100); // Small delay to ensure selection update
+              }
+            }
+          }
+          
+          try {
+            const logPath = '/tmp/ai-sfx-debug.log';
+            const timestamp = new Date().toISOString();
+            const logMessage = `${timestamp} - GLOBAL UP + AUTO-PLAY: ${newIndex}\n`;
+            fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          } catch (err) {}
+        }
+      }
+    };
+
+    // Add global event listener
+    document.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    
+    // Cleanup
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+      
+      // Cancel any pending auto-play timeouts when cleanup
+      if (autoPlayTimeoutRef.current) {
+        clearTimeout(autoPlayTimeoutRef.current);
+        autoPlayTimeoutRef.current = null;
+      }
+    };
+  }, [state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.allSFXFileInfo, previewAudio, stopPreview, dispatch]);
+
+  // Cancel timeouts and disable continuous mode when SFX dropdown is hidden
+  useEffect(() => {
+    if (!state.showSFXDropdown) {
+      if (autoPlayTimeoutRef.current) {
+        clearTimeout(autoPlayTimeoutRef.current);
+        autoPlayTimeoutRef.current = null;
+      }
+      // Disable continuous preview mode when dropdown is hidden
+      dispatch(SFXActions.setContinuousPreviewMode(false));
+    }
+  }, [state.showSFXDropdown, dispatch]);
+
+  // AGGRESSIVE left/right arrow capture specifically for Premiere Pro CEP override
+  useEffect(() => {
+    if (!textareaHasFocus || !state.isLookupMode || !state.showSFXDropdown || state.filteredSFXFiles.length === 0) {
+      return; // Only when textarea is focused and in lookup mode
+    }
+
+    const aggressiveLeftRightCapture = (e: Event) => {
+      const keyEvent = e as KeyboardEvent;
+      
+      // ONLY target left/right arrows when textarea has focus
+      if (keyEvent.key === 'ArrowLeft' || keyEvent.key === 'ArrowRight') {
+        console.log('🔥 AGGRESSIVE CAPTURE:', {
+          key: keyEvent.key,
+          textareaFocus: textareaHasFocus,
+          lookupMode: state.isLookupMode,
+          target: (keyEvent.target as Element)?.tagName
+        });
+        
+        // Log to file for CEP debugging
+        try {
+          const logPath = '/tmp/ai-sfx-debug.log';
+          const timestamp = new Date().toISOString();
+          const logMessage = `${timestamp} - AGGRESSIVE ${keyEvent.key}: Focus=${textareaHasFocus} Lookup=${state.isLookupMode} Files=${state.filteredSFXFiles.length}\n`;
+          fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+        } catch (err) {}
+        
+        // AGGRESSIVELY prevent Premiere Pro from getting this event
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        keyEvent.stopImmediatePropagation();
+        
+        // Handle the key press ourselves
+        if (keyEvent.key === 'ArrowRight') {
+          // RIGHT = Play selected SFX and enable continuous mode
+          const selectedFilename = state.filteredSFXFiles[state.selectedDropdownIndex];
+          if (selectedFilename) {
+            console.log('🔥▶️ AGGRESSIVE RIGHT: PLAY + ENABLE CONTINUOUS', selectedFilename);
+            
+            try {
+              const logPath = '/tmp/ai-sfx-debug.log';
+              const timestamp = new Date().toISOString();
+              const logMessage = `${timestamp} - AGGRESSIVE PLAY + CONTINUOUS: ${selectedFilename}\n`;
+              fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+            } catch (err) {}
+            
+            const selectedFile = state.allSFXFileInfo.find(f => f.filename === selectedFilename);
+            if (selectedFile) {
+              dispatch(SFXActions.setContinuousPreviewMode(true)); // Enable continuous mode
+              previewAudio(selectedFile.path);
+            }
+          }
+        } else if (keyEvent.key === 'ArrowLeft') {
+          // LEFT = Stop current audio AND disable continuous preview mode
+          console.log('🔥⏸️ AGGRESSIVE LEFT: STOP + DISABLE CONTINUOUS MODE');
+          
+          try {
+            const logPath = '/tmp/ai-sfx-debug.log';
+            const timestamp = new Date().toISOString();
+            const logMessage = `${timestamp} - AGGRESSIVE STOP + DISABLE CONTINUOUS\n`;
+            fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          } catch (err) {}
+          
+          stopPreview();
+          dispatch(SFXActions.setContinuousPreviewMode(false));
+        }
+        
+        // Explicitly return false to further block event propagation
+        return false;
+      }
+    };
+
+    // Add multiple aggressive capture methods
+    const methods = [
+      // Method 1: Capture phase with highest priority
+      { method: 'capture-priority', options: { capture: true, passive: false } },
+      // Method 2: Bubble phase as backup
+      { method: 'bubble-backup', options: { capture: false, passive: false } },
+      // Method 3: Window level capture (CEP specific)
+      { method: 'window-capture', options: { capture: true, passive: false } }
+    ];
+
+    methods.forEach(({ method, options }) => {
+      // Add to document
+      document.addEventListener('keydown', aggressiveLeftRightCapture, options);
+      // Add to window (CEP-specific override)
+      window.addEventListener('keydown', aggressiveLeftRightCapture, options);
+      
+      console.log(`🔥 Added ${method} listener for left/right override`);
+    });
+
+    // Also add keyup as backup (some CEP panels only catch keyup)
+    const keyupCapture = (e: Event) => {
+      const keyEvent = e as KeyboardEvent;
+      if (keyEvent.key === 'ArrowLeft' || keyEvent.key === 'ArrowRight') {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        keyEvent.stopImmediatePropagation();
+        return false;
+      }
+    };
+    
+    document.addEventListener('keyup', keyupCapture, { capture: true });
+    window.addEventListener('keyup', keyupCapture, { capture: true });
+
+    // Cleanup all listeners
+    return () => {
+      methods.forEach(({ options }) => {
+        document.removeEventListener('keydown', aggressiveLeftRightCapture, options);
+        window.removeEventListener('keydown', aggressiveLeftRightCapture, options);
+      });
+      
+      document.removeEventListener('keyup', keyupCapture, { capture: true });
+      window.removeEventListener('keyup', keyupCapture, { capture: true });
+      
+      console.log('🔥 Removed aggressive left/right capture listeners');
+    };
+  }, [textareaHasFocus, state.isLookupMode, state.showSFXDropdown, state.filteredSFXFiles, state.selectedDropdownIndex, state.allSFXFileInfo, previewAudio, stopPreview]);
+
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback(async (e: React.KeyboardEvent) => {
+    // ENHANCED DEBUG: Log ALL key presses with more details
+    console.log('🎹 ALL KEY PRESSES:', {
+      key: e.key,
+      code: e.code,
+      keyCode: e.keyCode,
+      isLookupMode: state.isLookupMode,
+      showDropdown: state.showSFXDropdown,
+      filesCount: state.filteredSFXFiles.length,
+      selectedIndex: state.selectedDropdownIndex,
+      target: (e.target as Element)?.tagName,
+      defaultPrevented: e.defaultPrevented
+    });
+    
+    // ENHANCED DEBUG: Always log arrow keys to file for CEP debugging
+    if (e.key.startsWith('Arrow')) {
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - ENHANCED ARROW KEY DEBUG: ${e.key} (code: ${e.code}) - Lookup: ${state.isLookupMode} - Dropdown: ${state.showSFXDropdown} - Files: ${state.filteredSFXFiles.length} - Selected: ${state.selectedDropdownIndex}\n`;
+        fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+      } catch (e) {}
+    }
+    
+    // DEBUG: Log all key presses in lookup mode (keeping original for comparison)
+    if (state.isLookupMode) {
+      console.log('🎹 KEY PRESSED IN LOOKUP MODE:', {
+        key: e.key,
+        isLookupMode: state.isLookupMode,
+        showDropdown: state.showSFXDropdown,
+        filesCount: state.filteredSFXFiles.length,
+        selectedIndex: state.selectedDropdownIndex
+      });
+      
+      // Log to file
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - KEY IN LOOKUP: ${e.key} - Files: ${state.filteredSFXFiles.length} - Selected: ${state.selectedDropdownIndex}\n`;
+        fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+      } catch (e) {}
+    }
+    
     // Handle spacebar press when prompt is empty to trigger lookup mode (available to all users)
     if (e.key === ' ' && state.prompt === '' && !state.isLookupMode) {
+      console.log('🚀 SPACEBAR PRESSED: Starting SFX lookup mode...');
+      
+      // Also log to file for CEP debugging
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - SPACEBAR PRESSED: Starting SFX lookup mode...\n`;
+        fs.writeFileSync(logPath, logMessage + '\n', { flag: 'a' });
+      } catch (e) {
+        // Ignore file logging errors
+      }
+      
       e.preventDefault(); // Prevent space from being added to textarea
       
       // Check if we have cached data that's still fresh
       const now = Date.now();
       const cacheExpired = now - state.lastScanTime > CACHE_DURATION;
+      console.log('💾 Cache check:', { 
+        cachedFiles: cachedFileInfoRef.current.length, 
+        cacheExpired, 
+        lastScanTime: new Date(state.lastScanTime).toISOString() 
+      });
       
       if (cachedFileInfoRef.current.length > 0 && !cacheExpired) {
         // Use cached data for instant response
@@ -1207,25 +1950,83 @@ export const App = () => {
       return;
     }
     
-    // Arrow key navigation in lookup mode - prevent default cursor movement (available to all users)
+    // UNIFIED ARROW KEY HANDLING - All arrow keys in one place
     if (state.isLookupMode && state.showSFXDropdown && state.filteredSFXFiles.length > 0) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault(); // Prevent text cursor movement
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault(); // Prevent default behavior
         e.stopPropagation();
         
         if (e.key === 'ArrowDown') {
+          // DOWN = Next file
+          console.log('🔽 DOWN: Navigate to next file');
           const newIndex = state.selectedDropdownIndex < state.filteredSFXFiles.length - 1 
             ? state.selectedDropdownIndex + 1 
             : 0; // Wrap to top
           dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
-        } else { // ArrowUp
+          
+        } else if (e.key === 'ArrowUp') {
+          // UP = Previous file
+          console.log('🔼 UP: Navigate to previous file');
           const newIndex = state.selectedDropdownIndex > 0 
             ? state.selectedDropdownIndex - 1 
             : state.filteredSFXFiles.length - 1; // Wrap to bottom
           dispatch(SFXActions.setSelectedDropdownIndex(newIndex));
+          
+        } else if (e.key === 'ArrowRight') {
+          // RIGHT = PLAY selected SFX
+          const selectedFilename = state.filteredSFXFiles[state.selectedDropdownIndex];
+          if (selectedFilename) {
+            console.log('▶️ RIGHT: PLAY', selectedFilename);
+            
+            // Log to file
+            try {
+              const logPath = '/tmp/ai-sfx-debug.log';
+              const timestamp = new Date().toISOString();
+              const logMessage = `${timestamp} - KEYBOARD PLAY: ${selectedFilename}\n`;
+              fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+            } catch (e) {}
+            
+            // Find the selected file info and trigger preview
+            const selectedFile = state.allSFXFileInfo.find(f => f.filename === selectedFilename);
+            if (selectedFile) {
+              previewAudio(selectedFile.path);
+            }
+          }
+          
+        } else if (e.key === 'ArrowLeft') {
+          // LEFT = PAUSE/STOP current preview
+          console.log('⏸️ LEFT: PAUSE/STOP');
+          
+          // Log to file
+          try {
+            const logPath = '/tmp/ai-sfx-debug.log';
+            const timestamp = new Date().toISOString();
+            const logMessage = `${timestamp} - KEYBOARD PAUSE\n`;
+            fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+          } catch (e) {}
+          
+          stopPreview();
         }
-        return; // Early return to prevent further processing
+        
+        return; // Prevent further processing
       }
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      // Debug why arrow keys aren't working
+      console.log('❌ ARROW KEY CONDITIONS NOT MET:', {
+        key: e.key,
+        isLookupMode: state.isLookupMode,
+        showSFXDropdown: state.showSFXDropdown,
+        filteredSFXFiles: state.filteredSFXFiles.length,
+        selectedIndex: state.selectedDropdownIndex
+      });
+      
+      // Log to file
+      try {
+        const logPath = '/tmp/ai-sfx-debug.log';
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp} - ARROW KEY BLOCKED - Lookup: ${state.isLookupMode} - Dropdown: ${state.showSFXDropdown} - Files: ${state.filteredSFXFiles.length}\n`;
+        fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+      } catch (e) {}
     }
     
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1268,12 +2069,23 @@ export const App = () => {
       
       // Initialize license system
       const licenseInfo = LicenseManager.initialize();
+      console.log('🚀 License initialization result:', licenseInfo);
+      
+      // Debug: Clear any cached demo API keys
+      if (licenseInfo.apiKey && licenseInfo.apiKey.includes('demo')) {
+        console.log('🧹 Clearing demo API key cache...');
+        localStorage.removeItem('ai_sfx_lemon_squeezy_license_v1');
+        window.location.reload();
+        return;
+      }
       
       // Load other settings
       const savedVolume = parseFloat(localStorage.getItem('sfxVolume') || '0');
-      const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') !== 'false';
+      const savedTrackTargeting = localStorage.getItem('trackTargetingEnabled') === 'true';
       const savedSelectedTrack = localStorage.getItem('selectedTrack') || 'A5*';
       const savedCustomPath = localStorage.getItem('customSFXPath') || null;
+      const savedSFXPlacement = (localStorage.getItem('sfxPlacement') as 'ai-sfx-bin' | 'active-bin') || 'ai-sfx-bin';
+      const savedAutoCheckUpdates = localStorage.getItem('autoCheckUpdates') !== 'false'; // Default to true
       
       dispatch(SFXActions.loadSettings({
         apiKey: licenseInfo.apiKey,
@@ -1282,7 +2094,9 @@ export const App = () => {
         volume: savedVolume,
         trackTargetingEnabled: savedTrackTargeting,
         selectedTrack: savedSelectedTrack,
-        customSFXPath: savedCustomPath
+        customSFXPath: savedCustomPath,
+        sfxPlacement: savedSFXPlacement,
+        autoCheckUpdates: savedAutoCheckUpdates
       }));
       
       console.log('🔒 Settings loaded securely');
@@ -1443,7 +2257,6 @@ export const App = () => {
       // Listen for real-time timeline changes with debouncing
       // Timeline monitoring is automatically initialized in ExtendScript
       listenTS("timelineChanged", (data) => {
-        
         // Debounce timeline updates to prevent excessive calls
         if (timelineUpdateRef.current) {
           clearTimeout(timelineUpdateRef.current);
@@ -1457,11 +2270,37 @@ export const App = () => {
     loadSettings();
     updateTimelineInfo();
     
-    // PERFORMANCE: Dramatically reduce polling - only when needed
-    const interval = setInterval(updateTimelineInfo, 60000); // Reduced to 60s
+    // PERFORMANCE: Smart timeline polling with focus-based frequency
+    let interval: NodeJS.Timeout;
+    
+    const startPolling = () => {
+      if (interval) clearInterval(interval);
+      
+      // More frequent updates when panel has focus (for In/Out point responsiveness)
+      const updateFrequency = document.hasFocus() ? 2000 : 8000; // 2s when focused, 8s when not
+      
+      interval = setInterval(() => {
+        // Only update if document is visible (tab is active)
+        if (!document.hidden) {
+          updateTimelineInfo();
+        }
+      }, updateFrequency);
+    };
+    
+    // Start with initial polling
+    startPolling();
+    
+    // Adjust polling frequency based on focus
+    const handleFocus = () => startPolling();
+    const handleBlur = () => startPolling();
+    
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
     
     return () => {
       clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
       if (timelineUpdateRef.current) {
         clearTimeout(timelineUpdateRef.current);
       }
@@ -1474,15 +2313,13 @@ export const App = () => {
     let trackTargetingInterval: NodeJS.Timeout | null = null;
     
     if (state.trackTargetingEnabled && state.menuMode === 'settings') {
-      console.log('🎯 Starting real-time track targeting detection...');
-      
       // Initial detection
       detectTargetedTrack();
       
-      // PERFORMANCE: Reduce track polling frequency
+      // Enable track targeting detection when track targeting is on
       trackTargetingInterval = setInterval(() => {
         detectTargetedTrack();
-      }, 5000); // Reduced from 2s to 5s
+      }, 3000); // Check every 3 seconds when targeting is enabled
     }
     
     return () => {
@@ -1533,6 +2370,30 @@ export const App = () => {
           value={state.prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => {
+            setTextareaHasFocus(true);
+            console.log('🎯 TEXTAREA FOCUSED - Aggressive left/right capture ENABLED');
+            
+            // Log to file for CEP debugging
+            try {
+              const logPath = '/tmp/ai-sfx-debug.log';
+              const timestamp = new Date().toISOString();
+              const logMessage = `${timestamp} - TEXTAREA FOCUSED - Aggressive capture enabled\n`;
+              fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+            } catch (e) {}
+          }}
+          onBlur={() => {
+            setTextareaHasFocus(false);
+            console.log('🎯 TEXTAREA BLURRED - Aggressive left/right capture DISABLED');
+            
+            // Log to file for CEP debugging
+            try {
+              const logPath = '/tmp/ai-sfx-debug.log';
+              const timestamp = new Date().toISOString();
+              const logMessage = `${timestamp} - TEXTAREA BLURRED - Aggressive capture disabled\n`;
+              fs.writeFileSync(logPath, logMessage, { flag: 'a' });
+            } catch (e) {}
+          }}
           placeholder={
             state.isGenerating ? "Generating..." : 
             !state.isLicensed ? "License Key" :
@@ -1634,7 +2495,7 @@ export const App = () => {
             </span>
           </div>
         </div>
-
+        
         <div className="controls-section">
           <div 
             className={`manual-controls ${state.manualModeActive ? 'active' : ''}`}
@@ -1718,22 +2579,12 @@ export const App = () => {
                   : 'Auto'
                 }
               </span>
-              {state.trackTargetingEnabled && (
-                <button 
-                  onClick={detectTargetedTrack}
-                  className="refresh-btn"
-                  title="Refresh targeted track detection"
-                >
-                  🔄
-                </button>
-              )}
             </div>
+            
             
             <div className="license-status">
               <span>License:</span>
-              <span className="status-indicator trial">
-                Trial
-              </span>
+              <span className={`status-dot ${state.isLicensed ? 'licensed' : 'trial'}`}></span>
             </div>
             
             <div className="menu-buttons">
@@ -1756,21 +2607,62 @@ export const App = () => {
             <div className="menu-content">
               <div className="license-status-row">
                 <span className="license-label">Status:</span>
-                <span className="license-status trial">Trial (7 days remaining)</span>
+                <span className={`license-status ${state.isLicensed ? 'licensed' : 'trial'}`}>
+                  {state.isLicensed ? 'Licensed' : 'Trial (7 days remaining)'}
+                </span>
               </div>
-              <div className="license-input-row">
-                <span>License Key:</span>
-                <input
-                  type="text"
-                  placeholder="Enter license key"
-                  className="license-input"
-                />
-                <button className="activate-btn">Activate</button>
-              </div>
+              
+              {state.isLicensed && (
+                <div className="license-info-row">
+                  <span className="license-info-label">License Key:</span>
+                  <span className="license-key-display">
+                    {state.licenseKey ? `****-****-****-${state.licenseKey.slice(-4)}` : '****-****-****-****'}
+                  </span>
+                </div>
+              )}
+              
+              {!state.isLicensed && (
+                <div className="license-input-row">
+                  <span>License Key:</span>
+                  <input
+                    type="text"
+                    placeholder="Enter license key"
+                    className="license-input"
+                    value={state.licenseKey}
+                    onChange={(e) => dispatch(SFXActions.setLicenseKey(e.target.value))}
+                  />
+                  <button 
+                    className="activate-btn"
+                    onClick={() => validateLicenseKey(state.licenseKey)}
+                    disabled={!state.licenseKey.trim()}
+                  >
+                    Activate
+                  </button>
+                </div>
+              )}
+              
               <div className="license-actions">
-                <button className="buy-license-btn" onClick={() => window.open('https://lemonsqueezy.com/checkout/buy/your-product-id', '_blank')}>
-                  Buy License
-                </button>
+                {state.isLicensed ? (
+                  <button 
+                    className="deactivate-license-btn" 
+                    onClick={() => {
+                      if (confirm('Deactivate license? This will free up the license for use on another machine.')) {
+                        dispatch(SFXActions.setLicensed(false));
+                        dispatch(SFXActions.setLicenseKey(''));
+                        localStorage.removeItem('licenseKey');
+                        localStorage.removeItem('isLicensed');
+                        showStatus('License deactivated successfully', 3000);
+                      }
+                    }}
+                    title="Free up license for use on another machine"
+                  >
+                    Deactivate License
+                  </button>
+                ) : (
+                  <button className="buy-license-btn" onClick={() => window.open('https://lemonsqueezy.com/checkout/buy/your-product-id', '_blank')}>
+                    Buy License
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1811,6 +2703,62 @@ export const App = () => {
                 {state.customSFXPath ? 'Reset' : 'Project'}
               </button>
             </div>
+            <div className="menu-row-3">
+              <span>Place in:</span>
+              <button 
+                onClick={() => {
+                  dispatch(SFXActions.setSFXPlacement('ai-sfx-bin'));
+                  localStorage.setItem('sfxPlacement', 'ai-sfx-bin');
+                  showStatus('SFX will be placed in "AI SFX" bin', 2000);
+                }} 
+                className={`placement-btn ${state.sfxPlacement === 'ai-sfx-bin' ? 'active' : ''}`}
+                title="Generated SFX goes to dedicated AI SFX bin">
+                AI SFX bin
+              </button>
+              <button 
+                onClick={() => {
+                  dispatch(SFXActions.setSFXPlacement('active-bin'));
+                  localStorage.setItem('sfxPlacement', 'active-bin');
+                  showStatus('SFX will be placed in active bin', 2000);
+                }} 
+                className={`placement-btn ${state.sfxPlacement === 'active-bin' ? 'active' : ''}`}
+                title="Generated SFX goes to currently selected bin in Project panel">
+                Active bin
+              </button>
+            </div>
+            <div className="menu-row-4">
+              <span>Search:</span>
+              <button 
+                onClick={async () => {
+                  showStatus('Scanning project bins for audio files...', 2000);
+                  try {
+                    // Force refresh of the file scan to include project bins
+                    await scanExistingSFXFiles();
+                    showStatus(`Scanned project - found ${state.allSFXFileInfo.length} audio files`, 3000);
+                  } catch (error) {
+                    showError('Failed to scan project bins');
+                  }
+                }} 
+                className="scan-bins-btn"
+                title="Scan Premiere Pro project bins for imported audio files">
+                Scan Project Bins
+              </button>
+              <button 
+                onClick={() => {
+                  if (state.allSFXFileInfo.length > 0) {
+                    dispatch(SFXActions.enterLookupMode(state.allSFXFileInfo, Date.now()));
+                    dispatch(SFXActions.setMenuMode('normal'));
+                    showStatus('Entered SFX lookup mode', 2000);
+                  } else {
+                    showStatus('No SFX files found - scan first', 2000);
+                  }
+                }} 
+                className="browse-files-btn"
+                disabled={state.allSFXFileInfo.length === 0}
+                title="Browse and search through available SFX files">
+                Browse Files
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1828,13 +2776,101 @@ export const App = () => {
                 <span className="version-label">Current Version:</span>
                 <span className="version">v1.0.0</span>
               </div>
+              
+              {state.latestVersion && (
+                <div className="latest-version-row">
+                  <span className="latest-label">Latest Version:</span>
+                  <span className="latest-version">{state.latestVersion}</span>
+                </div>
+              )}
+              
               <div className="update-check-row">
-                <span className="update-status">✓ Up to date</span>
-                <button className="check-updates-btn">Check Now</button>
+                <span className={`update-status ${state.updateAvailable ? 'update-available' : 'up-to-date'}`}>
+                  {state.isCheckingUpdates ? '🔄 Checking...' : 
+                   state.updateAvailable ? `📥 Update available: ${state.latestVersion}` : 
+                   state.latestVersion ? '✅ Up to date' : '⚪ Not checked'}
+                </span>
+                <button 
+                  className="check-updates-btn"
+                  onClick={() => checkForUpdates(true)}
+                  disabled={state.isCheckingUpdates}
+                >
+                  {state.isCheckingUpdates ? 'Checking...' : 'Check Now'}
+                </button>
               </div>
+              
+              {state.updateAvailable && state.updateDownloadUrl && (
+                <div className="update-download-row">
+                  <span className="download-label">Download:</span>
+                  <button 
+                    className="download-update-btn"
+                    onClick={async () => {
+                      if (state.updateDownloadUrl) {
+                        try {
+                          dispatch(SFXActions.setDownloadingUpdate(true));
+                          showStatus('Downloading update...', 3000);
+                          
+                          // Direct download without opening GitHub page
+                          const response = await fetch(state.updateDownloadUrl);
+                          
+                          if (!response.ok) {
+                            throw new Error(`Download failed: ${response.status}`);
+                          }
+                          
+                          const blob = await response.blob();
+                          
+                          // Create download link and trigger download
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `ai-sfx-generator-${state.latestVersion}.zxp`;
+                          a.style.display = 'none';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                          
+                          // Show installation instructions
+                          showSuccess(`✅ Update downloaded! File saved to Downloads folder.`, 5000);
+                          
+                          // Show install guide after brief delay
+                          setTimeout(() => {
+                            showStatus(`📁 Installation Guide:\n\n1. Close Premiere Pro\n2. Find ai-sfx-generator-${state.latestVersion}.zxp in Downloads\n3. Double-click to install\n4. Restart Premiere Pro`, 8000);
+                          }, 2000);
+                          
+                        } catch (error) {
+                          console.error('Download failed:', error);
+                          showError('Download failed. Opening GitHub page...', 3000);
+                          // Fallback to GitHub page
+                          setTimeout(() => {
+                            if (state.updateDownloadUrl) {
+                              window.open(state.updateDownloadUrl, '_blank');
+                            }
+                          }, 2000);
+                        } finally {
+                          dispatch(SFXActions.setDownloadingUpdate(false));
+                        }
+                      }
+                    }}
+                    disabled={state.isCheckingUpdates || state.isDownloadingUpdate}
+                  >
+                    {state.isDownloadingUpdate ? '⬇️ Downloading...' : 
+                     state.isCheckingUpdates ? 'Checking...' : 
+                     `📥 Download ${state.latestVersion}`}
+                  </button>
+                </div>
+              )}
+              
               <div className="update-settings">
                 <label className="auto-update-toggle">
-                  <input type="checkbox" checked readOnly />
+                  <input 
+                    type="checkbox" 
+                    checked={state.autoCheckUpdates} 
+                    onChange={(e) => {
+                      dispatch(SFXActions.setAutoCheckUpdates(e.target.checked));
+                      localStorage.setItem('autoCheckUpdates', e.target.checked.toString());
+                    }}
+                  />
                   <span>Auto-check for updates</span>
                 </label>
               </div>
@@ -1843,8 +2879,7 @@ export const App = () => {
         </div>
       )}
       
-      {/* Toast Notification System */}
-      <ToastSystem ref={toast.toastRef} maxToasts={5} position="top-right" />
+      {/* Toast system removed for silent operation */}
     </div>
   );
 };

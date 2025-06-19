@@ -10,7 +10,10 @@ initAutoReconnect();
 
 initBolt();
 
-// Connect to AI Podcast debugger
+// DISABLED: Connect to AI Podcast debugger - causing WebSocket polling spam
+// This connection attempts every 5 seconds causing console pollution
+// Completely disabled for clean development experience
+/*
 (function connectToDebugger() {
   const PLUGIN_ID = 'ai-sfx';
   let ws: WebSocket | null = null;
@@ -111,6 +114,7 @@ initBolt();
     pluginId: PLUGIN_ID
   };
 })();
+*/
 
 ReactDOM.createRoot(document.getElementById("app") as HTMLElement).render(
   <React.StrictMode>

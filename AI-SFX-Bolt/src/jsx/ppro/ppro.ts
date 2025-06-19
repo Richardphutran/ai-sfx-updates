@@ -1,4 +1,5 @@
 import { dispatchTS } from "../utils/utils";
+import { debugProjectPathDetailed, testProjectSaveStatus, testSFXDirectoryCreation } from "../debug-project-path";
 
 // ============= AI SFX GENERATOR PREMIERE PRO FUNCTIONS =============
 
@@ -44,7 +45,7 @@ export const testBasicExtendScript = () => {
             success: true,
             message: "ExtendScript is working!",
             appVersion: app ? app.version : "No app object",
-            timestamp: new Date().toISOString()
+            timestamp: (new Date()).toString()
         };
     } catch (error) {
         return {
@@ -672,8 +673,12 @@ export const getSequenceInfo = (): any => {
 /**
  * Import and place audio at specific time with smart track management
  * Uses proven QE API for track creation and collision detection
+ * @param filePath - Path to audio file to import
+ * @param timeSeconds - Time in seconds to place the audio
+ * @param startingTrackIndex - Track index to start searching from
+ * @param placementMode - Where to place the SFX: 'ai-sfx-bin' or 'active-bin'
  */
-export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number, startingTrackIndex: number = 0) => {
+export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number, startingTrackIndex: number = 0, placementMode: 'ai-sfx-bin' | 'active-bin' = 'ai-sfx-bin') => {
     const result = {
         success: false,
         step: "initialization",
@@ -720,25 +725,48 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
         result.debug.filePath = filePath;
         
         
-        // ALWAYS ensure AI SFX bin exists and is ready
+        // Determine target bin based on placement mode
         const rootItem = app.project.rootItem;
-        let aiSfxBin = null;
+        let targetBin = null;
         
-        // Look specifically for "AI SFX" bin (case-sensitive)
-        for (let i = 0; i < rootItem.children.numItems; i++) {
-            const item = rootItem.children[i];
-            if (item.type === ProjectItemType.BIN && item.name === 'AI SFX') {
-                aiSfxBin = item;
-                break;
-            }
-        }
-        
-        // Create AI SFX bin if it doesn't exist
-        if (!aiSfxBin) {
+        if (placementMode === 'active-bin') {
+            // Use active bin (currently selected bin in Project panel)
+            result.debug.placementMode = 'active-bin';
+            
+            // Try to get the active bin from the project
+            // Note: Adobe CEP doesn't expose the "active bin" directly, so we'll use a fallback strategy
             try {
-                aiSfxBin = rootItem.createBin('AI SFX');
-            } catch (createError) {
-                // Bin creation failed
+                // Method 1: Check if there's a selected item in the project that's a bin
+                // This is a limitation of Adobe's ExtendScript API - no direct way to get "active bin"
+                // We'll use the root item as fallback for active bin mode
+                targetBin = rootItem;
+                result.debug.activeBinFallback = "Using root item as active bin (CEP limitation)";
+            } catch (activeBinError) {
+                // Fallback to root if active bin detection fails
+                targetBin = rootItem;
+                result.debug.activeBinError = activeBinError.toString();
+            }
+        } else {
+            // Default: Use AI SFX bin
+            result.debug.placementMode = 'ai-sfx-bin';
+            
+            // Look specifically for "AI SFX" bin (case-sensitive)
+            for (let i = 0; i < rootItem.children.numItems; i++) {
+                const item = rootItem.children[i];
+                if (item.type === ProjectItemType.BIN && item.name === 'AI SFX') {
+                    targetBin = item;
+                    break;
+                }
+            }
+            
+            // Create AI SFX bin if it doesn't exist
+            if (!targetBin) {
+                try {
+                    targetBin = rootItem.createBin('AI SFX');
+                } catch (createError) {
+                    // Bin creation failed, use root as fallback
+                    targetBin = rootItem;
+                }
             }
         }
         
@@ -829,26 +857,33 @@ export const importAndPlaceAudioAtTime = (filePath: string, timeSeconds: number,
             return result;
         }
         
-        // MANDATORY: Organize into "AI SFX" bin (bin was created earlier)
+        // Organize into target bin based on placement mode
         result.step = "organizing_into_bin";
         
-        if (!aiSfxBin) {
-            result.debug.binMoveSkipped = "No AI SFX bin available";
-            result.error = "CRITICAL: AI SFX bin could not be created or found";
+        if (!targetBin) {
+            result.debug.binMoveSkipped = "No target bin available";
+            result.error = "CRITICAL: Target bin could not be created or found";
             return result;
         }
         
-        // MANDATORY: Move imported file to AI SFX bin
+        // Move imported file to target bin (AI SFX bin or active bin)
         if (!importedItem) {
             result.error = "CRITICAL: Could not find imported item to organize";
             return result;
         }
         
         try {
-            // CRITICAL: Move to AI SFX bin (never leave in root or wrong bin)
-            importedItem.moveBin(aiSfxBin);
+            // Move to target bin based on placement preference
+            if (targetBin !== rootItem) {
+                // Only move if target bin is not the root (avoid unnecessary operations)
+                importedItem.moveBin(targetBin);
+                result.debug.binMoveSuccess = `Moved to ${targetBin.name || 'target bin'}`;
+            } else {
+                result.debug.binMoveSkipped = "Target bin is root item - no move needed";
+            }
         } catch (moveError) {
             // Don't fail the entire operation for bin organization issues
+            result.debug.binMoveError = moveError.toString();
         }
         
         // Helper function to find parent bin
@@ -1607,7 +1642,7 @@ export const testConnection = () => {
     return {
         success: true,
         message: "AI SFX Generator ExtendScript connected via Bolt CEP!",
-        timestamp: (new Date()).toISOString(),
+        timestamp: (new Date()).toString(),
         premiereVersion: app.version,
         projectName: app.project ? app.project.name : "No project"
     };
@@ -1625,3 +1660,6 @@ export const getAppInfo = () => {
         sequenceName: (app.project && app.project.activeSequence) ? app.project.activeSequence.name : null
     };
 };
+
+// Export debug functions for project path troubleshooting
+export { debugProjectPathDetailed, testProjectSaveStatus, testSFXDirectoryCreation };

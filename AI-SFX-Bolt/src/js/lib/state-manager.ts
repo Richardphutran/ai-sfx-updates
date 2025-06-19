@@ -153,6 +153,8 @@ export interface SFXState {
   // File system state
   /** Custom SFX folder path (if set) */
   customSFXPath: string | null;
+  /** Where to place generated SFX: 'ai-sfx-bin' or 'active-bin' */
+  sfxPlacement: 'ai-sfx-bin' | 'active-bin';
   
   // Preview state
   /** Current audio element for preview */
@@ -161,6 +163,22 @@ export interface SFXState {
   isPlaying: boolean;
   /** Path to currently previewing file */
   previewFile: string | null;
+  /** Whether continuous preview mode is active (auto-play on navigation) */
+  continuousPreviewMode: boolean;
+  
+  // Update management
+  /** Whether auto-check for updates is enabled */
+  autoCheckUpdates: boolean;
+  /** Whether update check is currently in progress */
+  isCheckingUpdates: boolean;
+  /** Whether update download is currently in progress */
+  isDownloadingUpdate: boolean;
+  /** Latest available version from GitHub releases */
+  latestVersion: string | null;
+  /** Whether an update is available */
+  updateAvailable: boolean;
+  /** Download URL for the latest release */
+  updateDownloadUrl: string | null;
 }
 
 // Action types for type safety
@@ -205,11 +223,21 @@ export type SFXAction =
   
   // File system actions
   | { type: 'SET_CUSTOM_SFX_PATH'; payload: string | null }
+  | { type: 'SET_SFX_PLACEMENT'; payload: 'ai-sfx-bin' | 'active-bin' }
   
   // Preview actions
   | { type: 'SET_PREVIEW_AUDIO'; payload: HTMLAudioElement | null }
   | { type: 'SET_PLAYING'; payload: boolean }
   | { type: 'SET_PREVIEW_FILE'; payload: string | null }
+  | { type: 'SET_CONTINUOUS_PREVIEW_MODE'; payload: boolean }
+  
+  // Update management actions
+  | { type: 'SET_AUTO_CHECK_UPDATES'; payload: boolean }
+  | { type: 'SET_CHECKING_UPDATES'; payload: boolean }
+  | { type: 'SET_DOWNLOADING_UPDATE'; payload: boolean }
+  | { type: 'SET_LATEST_VERSION'; payload: string | null }
+  | { type: 'SET_UPDATE_AVAILABLE'; payload: boolean }
+  | { type: 'SET_UPDATE_DOWNLOAD_URL'; payload: string | null }
   
   // Bulk update actions
   | { type: 'LOAD_SETTINGS'; payload: Partial<SFXState> }
@@ -259,11 +287,21 @@ export const initialSFXState: SFXState = {
   
   // File system state
   customSFXPath: null,
+  sfxPlacement: 'ai-sfx-bin',
   
   // Preview state
   previewAudio: null,
   isPlaying: false,
-  previewFile: null
+  previewFile: null,
+  continuousPreviewMode: false,
+  
+  // Update management
+  autoCheckUpdates: true,
+  isCheckingUpdates: false,
+  isDownloadingUpdate: false,
+  latestVersion: null,
+  updateAvailable: false,
+  updateDownloadUrl: null
 };
 
 /**
@@ -365,6 +403,9 @@ export function sfxReducer(state: SFXState, action: SFXAction): SFXState {
     // File system actions
     case 'SET_CUSTOM_SFX_PATH':
       return { ...state, customSFXPath: action.payload };
+      
+    case 'SET_SFX_PLACEMENT':
+      return { ...state, sfxPlacement: action.payload };
     
     // Preview actions
     case 'SET_PREVIEW_AUDIO':
@@ -375,6 +416,28 @@ export function sfxReducer(state: SFXState, action: SFXAction): SFXState {
       
     case 'SET_PREVIEW_FILE':
       return { ...state, previewFile: action.payload };
+      
+    case 'SET_CONTINUOUS_PREVIEW_MODE':
+      return { ...state, continuousPreviewMode: action.payload };
+    
+    // Update management actions
+    case 'SET_AUTO_CHECK_UPDATES':
+      return { ...state, autoCheckUpdates: action.payload };
+      
+    case 'SET_CHECKING_UPDATES':
+      return { ...state, isCheckingUpdates: action.payload };
+      
+    case 'SET_DOWNLOADING_UPDATE':
+      return { ...state, isDownloadingUpdate: action.payload };
+      
+    case 'SET_LATEST_VERSION':
+      return { ...state, latestVersion: action.payload };
+      
+    case 'SET_UPDATE_AVAILABLE':
+      return { ...state, updateAvailable: action.payload };
+      
+    case 'SET_UPDATE_DOWNLOAD_URL':
+      return { ...state, updateDownloadUrl: action.payload };
     
     // Bulk update actions
     case 'LOAD_SETTINGS':
@@ -605,10 +668,59 @@ export const SFXActions = {
    */
   setCustomSFXPath: (path: string | null): SFXAction => ({ type: 'SET_CUSTOM_SFX_PATH', payload: path }),
   
+  /** 
+   * Set SFX placement preference
+   * @param placement - Where to place generated SFX files
+   */
+  setSFXPlacement: (placement: 'ai-sfx-bin' | 'active-bin'): SFXAction => ({ type: 'SET_SFX_PLACEMENT', payload: placement }),
+  
   // Preview
   setPreviewAudio: (audio: HTMLAudioElement | null): SFXAction => ({ type: 'SET_PREVIEW_AUDIO', payload: audio }),
   setPlaying: (playing: boolean): SFXAction => ({ type: 'SET_PLAYING', payload: playing }),
   setPreviewFile: (file: string | null): SFXAction => ({ type: 'SET_PREVIEW_FILE', payload: file }),
+  
+  /** 
+   * Set continuous preview mode (auto-play on navigation)
+   * @param continuous - Whether to enable continuous preview mode
+   */
+  setContinuousPreviewMode: (continuous: boolean): SFXAction => ({ type: 'SET_CONTINUOUS_PREVIEW_MODE', payload: continuous }),
+  
+  // Update management
+  /** 
+   * Set auto-check for updates preference
+   * @param autoCheck - Whether to automatically check for updates
+   */
+  setAutoCheckUpdates: (autoCheck: boolean): SFXAction => ({ type: 'SET_AUTO_CHECK_UPDATES', payload: autoCheck }),
+  
+  /** 
+   * Set update checking status
+   * @param checking - Whether update check is in progress
+   */
+  setCheckingUpdates: (checking: boolean): SFXAction => ({ type: 'SET_CHECKING_UPDATES', payload: checking }),
+  
+  /** 
+   * Set update downloading status
+   * @param downloading - Whether update download is in progress
+   */
+  setDownloadingUpdate: (downloading: boolean): SFXAction => ({ type: 'SET_DOWNLOADING_UPDATE', payload: downloading }),
+  
+  /** 
+   * Set latest available version
+   * @param version - Latest version string or null
+   */
+  setLatestVersion: (version: string | null): SFXAction => ({ type: 'SET_LATEST_VERSION', payload: version }),
+  
+  /** 
+   * Set update availability status
+   * @param available - Whether an update is available
+   */
+  setUpdateAvailable: (available: boolean): SFXAction => ({ type: 'SET_UPDATE_AVAILABLE', payload: available }),
+  
+  /** 
+   * Set update download URL
+   * @param url - Download URL for the latest release
+   */
+  setUpdateDownloadUrl: (url: string | null): SFXAction => ({ type: 'SET_UPDATE_DOWNLOAD_URL', payload: url }),
   
   // Bulk operations
   loadSettings: (settings: Partial<SFXState>): SFXAction => ({ type: 'LOAD_SETTINGS', payload: settings }),

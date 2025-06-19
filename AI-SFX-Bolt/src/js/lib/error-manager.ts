@@ -227,15 +227,9 @@ class ErrorManager {
   }
 
   private showNotification(error: ErrorDetails) {
-    const notificationType = this.getNotificationType(error.severity);
-    const duration = this.getNotificationDuration(error.severity);
-    
-    this.notify({
-      type: notificationType,
-      message: error.userMessage,
-      duration,
-      persistent: error.severity === ErrorSeverity.CRITICAL
-    });
+    // Silent operation - no popups/notifications
+    // Errors are logged to console only for debugging
+    return;
   }
 
   private notify(options: NotificationOptions & { message: string }) {

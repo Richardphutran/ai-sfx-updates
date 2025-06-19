@@ -12,7 +12,15 @@ export type Scripts = {
   
   // Audio placement functions
   importAndPlaceAudio: (filePath: string, trackIndex?: number) => PlacementResult;
-  importAndPlaceAudioAtTime: (filePath: string, timeSeconds: number, startingTrackIndex?: number) => PlacementResult;
+  importAndPlaceAudioAtTime: (filePath: string, timeSeconds: number, startingTrackIndex?: number, placementMode?: 'ai-sfx-bin' | 'active-bin') => PlacementResult;
+  
+  // Debug functions for project path troubleshooting
+  testBasicExtendScript: () => { success: boolean; message: string; appVersion: string; timestamp: string; error?: string };
+  debugTimelinePlacement: () => { success: boolean; debug: any; error?: string };
+  debugProjectPathDetailed: () => string; // Returns JSON string
+  testProjectSaveStatus: () => string; // Returns JSON string
+  testSFXDirectoryCreation: () => string; // Returns JSON string
+  getProjectPath: () => string; // Returns JSON string
   
   // Sample functions (for testing - can be removed later)
   helloError: (str: string) => void;

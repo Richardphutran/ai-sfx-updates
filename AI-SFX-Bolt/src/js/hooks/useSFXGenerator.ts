@@ -70,16 +70,17 @@ export const useSFXGenerator = ({
   }, []);
 
   /**
-   * Generate filename for SFX
+   * Generate filename for SFX - NEW FORMAT: uses spaces instead of underscores
    */
   const generateSFXFilename = useCallback((prompt: string, index: number = 1): string => {
     const sanitizedPrompt = InputSanitizer.sanitizeFilename(prompt)
       .toLowerCase()
-      .replace(/\s+/g, '_')
+      .replace(/\s+/g, ' ')  // Keep spaces instead of converting to underscores
+      .trim()
       .substring(0, 50); // Limit length
 
-    const timestamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    return `${sanitizedPrompt}_${timestamp}_${index}.mp3`;
+    // NEW FORMAT: "prompt text 1.mp3" (no timestamp, cleaner format)
+    return `${sanitizedPrompt} ${index}.mp3`;
   }, []);
 
   /**

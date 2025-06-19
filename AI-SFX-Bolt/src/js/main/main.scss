@@ -561,6 +561,7 @@ input[type="text"], textarea {
     }
   }
   
+  
   .controls-section {
     display: flex;
     align-items: center;
@@ -1010,6 +1011,32 @@ input[type="text"], textarea {
   &.disconnected {
     color: var(--text-dim);
   }
+  
+  &.licensed {
+    color: var(--success-green);
+  }
+  
+  &.trial {
+    color: var(--warning-red);
+  }
+}
+
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 6px;
+  
+  &.licensed {
+    background: var(--success-green);
+    box-shadow: 0 0 4px rgba(0, 204, 102, 0.6);
+  }
+  
+  &.trial {
+    background: var(--warning-red);
+    box-shadow: 0 0 4px rgba(255, 68, 68, 0.6);
+  }
 }
 
 .menu-buttons {
@@ -1074,7 +1101,7 @@ input[type="text"], textarea {
   justify-content: center;
 }
 
-.menu-row-1, .menu-row-2 {
+.menu-row-1, .menu-row-2, .menu-row-3, .menu-row-4 {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -1091,10 +1118,16 @@ input[type="text"], textarea {
   color: var(--text-dim);
 }
 
+.menu-row-3, .menu-row-4 {
+  height: 24px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
 
 
 
-.test-btn, .back-btn, .change-btn, .open-btn, .clean-btn, .email-btn, .save-btn, .action-btn {
+
+.test-btn, .back-btn, .change-btn, .open-btn, .clean-btn, .email-btn, .save-btn, .action-btn, .placement-btn, .scan-bins-btn, .browse-files-btn {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-active);
@@ -1131,6 +1164,216 @@ input[type="text"], textarea {
       background: var(--primary-blue-dark);
       border-color: var(--primary-blue-dark);
     }
+  }
+}
+
+/* Placement button specific styling */
+.placement-btn {
+  min-width: 60px;
+  
+  &.active {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: var(--text-white);
+    
+    &:hover {
+      background: var(--primary-blue-dark);
+      border-color: var(--primary-blue-dark);
+    }
+  }
+}
+
+/* License-specific styling */
+.license-status-row, .license-info-row, .license-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 10px;
+  padding: var(--space-xs) 0;
+}
+
+.license-label, .license-info-label {
+  color: var(--text-dim);
+  min-width: 80px;
+}
+
+.license-status {
+  color: var(--text-active);
+  font-weight: 500;
+  
+  &.licensed {
+    color: var(--success-green);
+  }
+  
+  &.trial {
+    color: var(--warning-orange);
+  }
+}
+
+.license-key-display {
+  color: var(--text-active);
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 9px;
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-color);
+}
+
+.license-input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-active);
+  font-size: 9px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+  }
+}
+
+.activate-btn, .deactivate-license-btn, .buy-license-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-active);
+  font-size: 9px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  
+  &:hover:not(:disabled) {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: var(--text-white);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.deactivate-license-btn {
+  background: var(--bg-secondary);
+  
+  &:hover {
+    background: var(--warning-red);
+    border-color: var(--warning-red);
+    color: var(--text-white);
+  }
+}
+
+.buy-license-btn {
+  background: var(--success-green);
+  border-color: var(--success-green);
+  color: var(--text-white);
+  
+  &:hover {
+    background: var(--success-green-dark, #00b359);
+    border-color: var(--success-green-dark, #00b359);
+  }
+}
+
+.license-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-sm);
+}
+
+/* Updates-specific styling */
+.update-status-row, .latest-version-row, .update-check-row, .update-download-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 10px;
+  padding: var(--space-xs) 0;
+}
+
+.version-label, .latest-label, .download-label {
+  color: var(--text-dim);
+  min-width: 100px;
+}
+
+.version, .latest-version {
+  color: var(--text-active);
+  font-weight: 500;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 9px;
+}
+
+.update-status {
+  color: var(--text-active);
+  font-weight: 500;
+  flex: 1;
+  
+  &.update-available {
+    color: var(--success-green);
+  }
+  
+  &.up-to-date {
+    color: var(--text-active);
+  }
+}
+
+.check-updates-btn, .download-update-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-active);
+  font-size: 9px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  
+  &:hover:not(:disabled) {
+    background: var(--primary-blue);
+    border-color: var(--primary-blue);
+    color: var(--text-white);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.download-update-btn {
+  background: var(--success-green);
+  border-color: var(--success-green);
+  color: var(--text-white);
+  
+  &:hover {
+    background: var(--success-green-dark, #00b359);
+    border-color: var(--success-green-dark, #00b359);
+  }
+}
+
+.update-settings {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border-color);
+}
+
+.auto-update-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 9px;
+  color: var(--text-active);
+  cursor: pointer;
+  
+  input[type="checkbox"] {
+    accent-color: var(--primary-blue);
+  }
+  
+  &:hover {
+    color: var(--text-white);
   }
 }
 
